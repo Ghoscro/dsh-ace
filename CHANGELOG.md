@@ -4,6 +4,9 @@
 
 - The fourth mode is named 王牌预测 in the Chinese UI and ACE in the English
   UI; the internal id stays `wild` so saved settings keep working.
+- Usage rows also carry `sessionId`, `turnIndex`, `sessionTurns` and the
+  session's running `sessionCost`, so a multi-day curve can be plotted; the
+  counters rebuild from the file after a restart.
 - Usage rows now carry `cost`, `currency`, `hitRate` and hit/miss token counts,
   priced with the configurable `pricing` block (USD per 1M tokens by default).
 - The expert prompt is ordered for provider prefix caching: identical head,

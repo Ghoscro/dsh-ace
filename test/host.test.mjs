@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -772,4 +772,41 @@ test('usage without cache fields is treated as all misses, not as free tokens', 
   assert.equal(row.missTokens, 500)
   const expected = Math.round(((500 * 0.28 + 50 * 0.42) / 1_000_000) * 1e6) / 1e6
   assert.equal(row.cost, expected)
+})
+
+test('each row knows its session turn index and the running total', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ace-session-'))
+  process.env.DSH_HOME = dir
+  const call = sessionId => logUsage({
+    sessionId, status: 'ok', mode: 'expert', style: 'wild', promptChars: 2000,
+    usage: { prompt_tokens: 1000, completion_tokens: 10, prompt_cache_hit_tokens: 0, prompt_cache_miss_tokens: 1000 },
+  })
+  call('s1')
+  call('s1')
+  call('s2')
+  const rows = readFileSync(join(dir, 'diagnostics', 'dsh-ace-usage.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(rows[0].sessionId, 's1')
+  assert.equal(rows[0].turnIndex, 1)
+  assert.equal(rows[1].turnIndex, 2)
+  assert.ok(rows[1].sessionCost > rows[0].sessionCost, 'the running total grows')
+  assert.equal(rows[0].sessionCost, 0.000284, 'input miss plus output, priced then rounded')
+  assert.equal(rows[2].sessionId, 's2')
+  assert.equal(rows[2].turnIndex, 1, 'a new session starts at one')
+  assert.ok(rows[2].sessionCost < rows[1].sessionCost, 'and its total starts over')
+})
+
+test('a restart picks the turn index back up from the usage file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ace-restart-'))
+  process.env.DSH_HOME = dir
+  mkdirSync(join(dir, 'diagnostics'), { recursive: true })
+  writeFileSync(join(dir, 'diagnostics', 'dsh-ace-usage.jsonl'), JSON.stringify({
+    at: new Date().toISOString(), sessionId: 's9', turnIndex: 7, sessionTurns: 7, sessionCost: 0.5,
+  }) + '\n')
+  logUsage({
+    sessionId: 's9', status: 'ok', mode: 'expert', style: 'standard', promptChars: 1000,
+    usage: { prompt_tokens: 100, completion_tokens: 5, prompt_cache_hit_tokens: 0, prompt_cache_miss_tokens: 100 },
+  })
+  const rows = readFileSync(join(dir, 'diagnostics', 'dsh-ace-usage.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(rows.at(-1).turnIndex, 8)
+  assert.ok(rows.at(-1).sessionCost > 0.5)
 })

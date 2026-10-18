@@ -11,8 +11,8 @@
  */
 
 import { execFile } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 /** Public plugin name used by Cordis. */
 export const name = 'dsh-ace'
@@ -1006,8 +1006,21 @@ export function logUsage(event) {
       if (typeof value === 'number' && Number.isFinite(value)) numeric[key] = value
     }
     const money = usageCost(usage, event.pricing)
-    appendFileSync(join(directory, 'dsh-ace-usage.jsonl'), JSON.stringify({
+    const file = join(directory, 'dsh-ace-usage.jsonl')
+    // Turns are counted per session and survive a restart: the first write in a
+    // fresh process rebuilds the counters from the file it is appending to.
+    const index = usageIndex(dirname(file))
+    const sessionId = typeof event.sessionId === 'string' ? event.sessionId.slice(0, 200) : 'anonymous'
+    const entry = index.get(sessionId) ?? { turns: 0, cost: 0 }
+    entry.turns += 1
+    entry.cost = Math.round((entry.cost + money.cost) * 1_000_000) / 1_000_000
+    index.set(sessionId, entry)
+    appendFileSync(file, JSON.stringify({
       at: new Date().toISOString(),
+      sessionId,
+      turnIndex: entry.turns,
+      sessionTurns: entry.turns,
+      sessionCost: entry.cost,
       status: event.status ?? '',
       mode: event.mode ?? '',
       style: event.style ?? '',
@@ -1030,6 +1043,33 @@ export function logUsage(event) {
   } catch {
     // Usage logging must never break a prediction.
   }
+}
+
+/** Per-directory session counters, rebuilt from the usage file on first write. */
+const usageIndexes = new Map()
+
+function usageIndex(directory) {
+  const cached = usageIndexes.get(directory)
+  if (cached) return cached
+  const index = new Map()
+  try {
+    const file = join(directory, 'dsh-ace-usage.jsonl')
+    if (existsSync(file)) {
+      for (const line of readFileSync(file, 'utf8').split('\n')) {
+        if (!line.trim()) continue
+        const row = JSON.parse(line)
+        if (typeof row?.sessionId !== 'string') continue
+        const previous = index.get(row.sessionId) ?? { turns: 0, cost: 0 }
+        previous.turns = Math.max(previous.turns, Number(row.sessionTurns) || Number(row.turnIndex) || 0)
+        previous.cost = Math.max(previous.cost, Number(row.sessionCost) || 0)
+        index.set(row.sessionId, previous)
+      }
+    }
+  } catch {
+    // A corrupt line should not stop future accounting.
+  }
+  usageIndexes.set(directory, index)
+  return index
 }
 
 /**
@@ -1447,7 +1487,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
   req.on('close', onClose)
   try {
     const result = await generatePrediction(ctx, config, { transcript, cwd, count, locale, mode, style }, controller.signal)
-    logUsage({ status: 'ok', mode: result.mode ?? mode, style: result.style ?? style, promptChars: result.promptChars, usage: result.usage, pricing: config.pricing })
+    logUsage({ sessionId, status: 'ok', mode: result.mode ?? mode, style: result.style ?? style, promptChars: result.promptChars, usage: result.usage, pricing: config.pricing })
     if (result.warning) {
       logPredictionEvent({ status: 'fallback', sessionId, mode: result.mode ?? mode, style: result.style ?? style, warning: String(result.warning).slice(0, 300) })
     }
