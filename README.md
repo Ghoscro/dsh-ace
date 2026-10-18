@@ -102,11 +102,17 @@ The parser scans balanced JSON objects and skips a truncated or malformed line w
 
 ## Development
 
-```powershell
+```bash
 npm test
 ```
 
-Measure real provider token usage against a running DSH instance:
+Measure real provider token usage against a running DSH instance. macOS and Linux:
+
+```bash
+COMPOSER_PREDICT_BASE=http://127.0.0.1:13770 node scripts/token-tiers.mjs
+```
+
+Windows (PowerShell):
 
 ```powershell
 $env:COMPOSER_PREDICT_BASE='http://127.0.0.1:13770'

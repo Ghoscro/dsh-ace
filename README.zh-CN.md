@@ -102,8 +102,21 @@
 
 ## 开发
 
-```powershell
+```bash
 npm test
+```
+
+在运行中的 DSH 上测真实 token 用量。macOS / Linux：
+
+```bash
+COMPOSER_PREDICT_BASE=http://127.0.0.1:13770 node scripts/token-tiers.mjs
+```
+
+Windows（PowerShell）：
+
+```powershell
+$env:COMPOSER_PREDICT_BASE='http://127.0.0.1:13770'
+node scripts/token-tiers.mjs
 ```
 
 覆盖 prompt/parser、JSONL 坏行保留、选卡打分、不出卡、路由响应和单卡交互。兼容范围写在 `package.json.dsh.compatibility`；未列出的版本按未验证处理。

@@ -5,7 +5,7 @@ Origin (DCO)**, not a CLA.
 
 ## Before a PR
 
-```powershell
+```bash
 npm test
 ```
 
@@ -33,5 +33,5 @@ change under the project's MIT license.
 ## Scope
 
 Good first issues: prompt fixtures, selection scoring, single-card UX, Windows
-path handling, evidence-pack redaction, token measurement. Large architecture
-changes (subagents, cross-session learning) need an issue first.
+and macOS path handling, evidence-pack redaction, token measurement. Large
+architecture changes (subagents, cross-session learning) need an issue first.

@@ -35,13 +35,13 @@ Do not add both `dsh-composer-predict` and `@ghoscro/dsh-ace` to the bundle list
 
 ## Tarball
 
-```powershell
+```bash
 npm pack
 ```
 
 The tarball contains only the explicit `files` list. Inspect it before sharing:
 
-```powershell
+```bash
 tar -tf ghoscro-dsh-ace-0.1.0.tgz
 ```
 
