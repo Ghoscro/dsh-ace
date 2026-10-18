@@ -7,15 +7,15 @@ const SETTINGS_KEY = 'dsh.composer-predict.settings.v1'
 const ROUTE = '/composer-predict/predict'
 
 const zh = {
-  title: 'ACE Move', loading: 'ACE 正在预测下一句…', refresh: '重新推演', close: '关闭 ACE',
-  empty: '这轮没有比顺手继续更好的 ACE Move', error: 'ACE 失败', retry: '重试', inserted: 'ACE 建议已填入',
-  undo: '撤销', settings: 'ACE 设置', auto: '自动生成 ACE', pause: '暂停 ACE',
-  count: '候选数量', privacy: 'ACE 会把最近几轮对话发给当前模型；不写入会话记录，不跨会话学习。',
-  button: '✦ ACE', buttonTitle: '生成一条 ACE Move（Tab 采用）',
-  deep: 'ACE', deepTitle: '生成一条 ACE Move（约 10–50 秒，可取消）',
-  deepLoading: 'ACE 正在推演下一步…', autoExpert: '每轮自动生成 ACE 建议',
-  card: 'ACE Move', ace: 'ACE',
-  recommended: '推荐', evidence: '依据', risk: '风险', fallback: 'ACE 推演失败，已回退一条快速建议',
+  title: '深度预测', loading: '正在预测下一句…', refresh: '重新推演', close: '关闭深度预测',
+  empty: '这轮没有比顺手继续更好的深度预测', error: '深度预测失败', retry: '重试', inserted: '深度预测建议已填入',
+  undo: '撤销', settings: '深度预测设置', auto: '自动生成深度预测', pause: '暂停深度预测',
+  count: '候选数量', privacy: '深度预测会把最近几轮对话发给当前模型；不写入会话记录，不跨会话学习。',
+  button: '深度预测', buttonTitle: '生成一条深度预测（Tab 采用）',
+  deep: '深度预测', deepTitle: '生成一条深度预测（约 10–50 秒，可取消）',
+  deepLoading: '深度预测正在推演下一步…', autoExpert: '每轮自动生成深度预测建议',
+  card: '深度预测', ace: '深度预测',
+  recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
 }
 const en = {
   title: 'ACE Move', loading: 'ACE is predicting your next move…', refresh: 'Think again',

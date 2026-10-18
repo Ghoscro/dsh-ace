@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The Chinese UI reads 深度预测 instead of `ACE` on the dock card, buttons, and
+  settings; the English UI is unchanged.
+- Development docs show the macOS/Linux shell form and keep the Windows one.
+- CI runs the suite on macOS as well as Windows and Linux.
+
 ## 0.1.0 — 2026-10-19
 
 - First public ACE release.

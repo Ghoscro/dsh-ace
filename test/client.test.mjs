@@ -139,7 +139,10 @@ test('apply registers both composer slots and the locale dictionary', () => {
     'conversation.input.right:ace-deep',
   ])
   assert.equal(dictionaries[0].namespace, 'dsh-ace')
-  assert.equal(dictionaries[0].dictionary.zh.title, 'ACE Move')
+  assert.equal(dictionaries[0].dictionary.zh.title, '深度预测')
+  assert.equal(dictionaries[0].dictionary.zh.button, '深度预测')
+  assert.equal(dictionaries[0].dictionary.zh.ace, '深度预测')
+  assert.equal(dictionaries[0].dictionary.en.title, 'ACE Move')
   effects.forEach(dispose => { if (typeof dispose === 'function') dispose() })
 })
 

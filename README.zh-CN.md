@@ -50,7 +50,7 @@
 
 3. 把 `"@ghoscro/dsh-ace"` 加入 `dsh.profile.bundles`。
 4. 在 profile 里 materialize（`pnpm install` 或 DSH 插件页），重启 DSH。
-5. 打开对话，composer 工具行出现 **✦ ACE**。点击它，或等下一轮完成（如果开了自动 ACE）。
+5. 打开对话，composer 工具行出现 **✦ 深度预测**。点击它，或等下一轮完成（如果开了自动 ACE）。
 6. 在卡片上按 `Tab` 填入草稿。
 
 从 `dsh-composer-predict` 迁移，先读 [MIGRATION.md](MIGRATION.md)。不要同时加载两个包。
@@ -94,8 +94,8 @@
 
 ## 设置与成本
 
-- **自动 ACE：** 每轮完成后生成一条；可在 ACE 设置里关闭。
-- **暂停：** 停止自动建议；`✦ ACE` 仍可按需使用。
+- **自动 ACE：** 每轮完成后生成一条；可在「深度预测设置」里关闭。
+- **暂停：** 停止自动建议；`✦ 深度预测` 仍可按需使用。
 - **模型：** 使用当前 DSH agent default，或插件配置的 route。
 - **隐私：** 最近对话和本地证据包会发给选中的模型；不写入会话，不跨会话学习。
 - **成本：** 每次 ACE 建议一次模型调用。发布前会补 fast/expert × 短/长上下文的真实 token 表；自动 ACE 是较贵的模式，只想按需使用时可以暂停。

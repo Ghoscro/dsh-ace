@@ -28,7 +28,7 @@
    ```
 
 4. Materialize the dependency in the profile (`pnpm install` or the DSH plugin page).
-5. Start DSH. The composer toolbar should show **✦ ACE**.
+5. Start DSH. The composer toolbar should show **✦ ACE** (**✦ 深度预测** in the Chinese UI).
 6. Finish an assistant turn, or click **✦ ACE**. Press `Tab` on the card to fill the draft.
 
 Do not add both `dsh-composer-predict` and `@ghoscro/dsh-ace` to the bundle list. See [MIGRATION.md](MIGRATION.md).
