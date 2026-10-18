@@ -61,5 +61,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^26.0.0"
   }
 }
