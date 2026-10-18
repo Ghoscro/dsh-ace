@@ -255,14 +255,35 @@ test('generateExpertPrediction uses deterministic situation and one model call',
   assert.equal(calls.count, 1)
 })
 
-test('generatePrediction falls back to fast when expert output is unusable', async () => {
+test('generatePrediction falls back to fast when expert retry is unusable', async () => {
   const calls = { count: 0 }
-  const ctx = { get: () => undefined, llm: llmSequence(['not json', '["回退建议"]'], calls) }
+  const ctx = { get: () => undefined, llm: llmSequence(['not json', 'not json', '["回退建议"]'], calls) }
   const result = await generatePrediction(ctx, normalizeConfig(), {
     transcript: [{ role: 'user', text: '继续' }], count: 2, cwd: '', locale: 'zh-CN', mode: 'expert',
   }, new AbortController().signal)
   assert.equal(result.mode, 'fast-fallback')
   assert.deepEqual(result.candidates, ['回退建议'])
+  assert.equal(calls.count, 3)
+})
+
+test('generateExpertPrediction retries once with a compact one-object prompt', async () => {
+  const calls = { count: 0 }
+  const ctx = {
+    get: () => undefined,
+    llm: llmSequence(['not a usable expert response', JSON.stringify({
+      text: '先只跑这个用例，确认竞态是否还在', why: '缩小范围，先验证机制', evidence: 'x.test.ts',
+      risk: '单测通过不代表全量稳定', action: 'verify', value: 7, novelty: 5, worth_extra_step: 7,
+    })], calls),
+  }
+  const result = await generateExpertPrediction(ctx, normalizeConfig(), {
+    transcript: [{ role: 'user', text: '帮我修测试' }, { role: 'assistant', text: '要跑全量吗？' }],
+    count: 4,
+    cwd: '',
+    locale: 'zh-CN',
+  }, new AbortController().signal)
+  assert.equal(result.mode, 'expert')
+  assert.equal(result.candidates.length, 1)
+  assert.equal(result.candidates[0].text, '先只跑这个用例，确认竞态是否还在')
   assert.equal(calls.count, 2)
 })
 

@@ -106,6 +106,13 @@ The parser scans balanced JSON objects and skips a truncated or malformed line w
 npm test
 ```
 
+Measure real provider token usage against a running DSH instance:
+
+```powershell
+$env:COMPOSER_PREDICT_BASE='http://127.0.0.1:13770'
+node scripts/token-tiers.mjs
+```
+
 The suite covers prompt/parser behavior, JSONL bad-line salvage, selection scoring, no-card behavior, route envelopes, and the single-card UI interactions.
 
 Compatibility is declared in `package.json.dsh.compatibility`. Treat a version not listed there as unverified; do not assume a package-manager success is a runtime acceptance.

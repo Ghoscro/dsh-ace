@@ -1,9 +1,9 @@
 /**
  * dsh-ace - host half.
  *
- * The browser half sends the recent transcript and asks for one ACE Move.
- * This module owns the model call, the prompt, the parser, and one same-origin
- * HTTP route on the shared DSH webserver.
+ * The browser half sends the recent transcript and asks for a short list of
+ * predicted user messages. This module owns the model call, the prompt, the
+ * parser, and one same-origin HTTP route on the shared DSH webserver.
  *
  * The route is intentionally not a general-purpose model proxy: it accepts
  * only a bounded transcript, uses one configured prediction prompt, and caps
@@ -494,6 +494,38 @@ export function buildExpertPrompt(input) {
 }
 
 /**
+ * Build the compact one-object retry prompt used when the full 3-5 candidate
+ * call returns no text. The normal path still generates and scores multiple
+ * directions; this is a bounded rescue, not the default.
+ * @param {{ situation: object, transcript: Array<object>, evidence?: string, locale?: string }} input - prompt inputs.
+ * @returns {{ system: string, user: string }} model messages.
+ */
+export function buildSingleMovePrompt(input) {
+  const transcript = Array.isArray(input.transcript) ? input.transcript : []
+  const locale = typeof input.locale === 'string' ? input.locale.toLowerCase() : 'zh'
+  const style = transcript
+    .filter(row => row.role === 'user')
+    .slice(-6)
+    .map(row => `- ${clip(row.text, 240)}`)
+    .join('\n') || '(none)'
+  const thread = transcript
+    .slice(-8)
+    .map(row => `${row.role}: ${clip(row.text, row.role === 'assistant' ? 800 : 400)}`)
+    .join('\n') || '(none)'
+  const system = locale.startsWith('zh')
+    ? `你是 ACE。先在内部比较 3 个方向（推进、用现成工具/更省事、重新框定），只输出一个最值得用户发送的 JSON 对象。没有比顺手继续更好的，就输出 {"best_index":null,"comparison":"没有更好的下一步"}。
+JSON 对象字段：text, why, evidence, risk, action, value, novelty, worth_extra_step, over_obvious。
+不要数组、不要多行对象、不要 markdown。text 用用户口吻，可直接发送；why 不发送；不要编造。`
+    : `You are ACE. Compare 3 directions internally (advance, existing tool/cheaper path, reframe) and output only the one JSON object most worth sending. If nothing beats the obvious next line, output {"best_index":null,"comparison":"no better next move"}.
+JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step, over_obvious.
+No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
+  return {
+    system,
+    user: `[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}`,
+  }
+}
+
+/**
  * Extract balanced JSON objects from arbitrary model text. This tolerates
  * line-delimited JSON, a legacy array, code fences, and a truncated final line.
  * @param {string} raw - raw model text.
@@ -922,19 +954,24 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   const evidence = await collectEvidence(input.cwd ?? '')
   const situation = buildDeterministicSituation(input.transcript)
   const movesPrompt = buildExpertPrompt({ ...input, evidence, situation })
-  const result = await callExpertStage(
-    ctx, route, movesPrompt, config, config.expertMovesTimeoutMs, config.expertMaxTokens, signal,
-  )
+  let result
   let selection
   try {
+    result = await callExpertStage(
+      ctx, route, movesPrompt, config, config.expertMovesTimeoutMs, config.expertMaxTokens, signal,
+    )
     selection = parseExpertSelection(result.text, 5)
   } catch (error) {
     logPredictionEvent({
-      status: 'moves-parse',
+      status: 'expert-retry',
       message: String(error?.message ?? error).slice(0, 300),
-      rawLength: result.text.length,
     })
-    throw error
+    if (signal.aborted) throw abortError(signal, 'expert stage aborted')
+    const retryPrompt = buildSingleMovePrompt({ ...input, evidence, situation })
+    result = await callExpertStage(
+      ctx, route, retryPrompt, config, Math.min(12_000, config.expertMovesTimeoutMs), 1400, signal,
+    )
+    selection = parseExpertSelection(result.text, 5)
   }
   const best = selectBestMove(selection, config.expertMinScore)
   const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()

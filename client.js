@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({id:'dsh-ace',factory:(require)=>{
-/** ACE: one next move beyond the obvious. */
+/** Predict the user's next message after an assistant turn. */
 const React = require('react')
 const { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
 const NS = 'dsh-ace'
