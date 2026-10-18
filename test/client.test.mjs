@@ -41,7 +41,7 @@ function loadClient() {
     requestAnimationFrame: window.requestAnimationFrame,
   }
   vm.runInNewContext(source, context, { filename: 'client.js' })
-  assert.equal(captured?.id, 'dsh-ace')
+  assert.equal(captured?.id, '@ghoscro/dsh-ace')
   const react = {
     createElement: () => null,
     useCallback: fn => fn,

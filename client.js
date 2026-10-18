@@ -1,4 +1,4 @@
-window.__ModuleLoader__.load({id:'dsh-ace',factory:(require)=>{
+window.__ModuleLoader__.load({id:'@ghoscro/dsh-ace',factory:(require)=>{
 /** Predict the user's next message after an assistant turn. */
 const React = require('react')
 const { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
