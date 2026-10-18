@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620" role="img" aria-labelledby="title desc">
+  <title id="title">DSH ACE — example ACE Move</title>
+  <desc id="desc">A dark composer card showing one ACE Move: remove the retry and run the test once to see whether the race is masked. It includes why, evidence, risk, and a Tab hint.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10131b"/>
+      <stop offset="1" stop-color="#171a24"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f0c674"/>
+      <stop offset="1" stop-color="#e08d5b"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#000" flood-opacity=".45"/>
+    </filter>
+  </defs>
+
+  <rect width="1100" height="620" rx="28" fill="url(#bg)"/>
+  <circle cx="940" cy="80" r="210" fill="#f0c674" opacity=".05"/>
+  <circle cx="140" cy="560" r="180" fill="#7aa2f7" opacity=".06"/>
+
+  <g font-family="'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif">
+    <text x="64" y="84" fill="#f4f5f7" font-size="30" font-weight="700" letter-spacing=".5">DSH ACE</text>
+    <text x="64" y="116" fill="#8b93a7" font-size="16" letter-spacing="1.6">ANTICIPATE · CHALLENGE · ELEVATE</text>
+    <text x="1036" y="86" fill="#5f6779" font-size="15" text-anchor="end">Beyond the obvious.</text>
+
+    <g filter="url(#shadow)">
+      <rect x="64" y="156" width="972" height="300" rx="18" fill="#1d212d" stroke="#2f3545"/>
+      <rect x="64" y="156" width="6" height="300" rx="3" fill="url(#accent)"/>
+
+      <g transform="translate(94,190)">
+        <rect x="0" y="0" width="74" height="26" rx="6" fill="#2b3040"/>
+        <text x="37" y="18" fill="#d8dce7" font-size="13" font-weight="600" text-anchor="middle">Tab</text>
+        <text x="92" y="18" fill="#8b93a7" font-size="13">ACE Move</text>
+        <text x="900" y="18" fill="#6f778a" font-size="12" text-anchor="end">1 recommendation</text>
+      </g>
+
+      <text x="94" y="268" fill="#f4f5f7" font-size="25" font-weight="650">
+        <tspan x="94" dy="0">Remove the retry and run this test once,</tspan>
+        <tspan x="94" dy="38">to see whether the retry was masking the race.</tspan>
+      </text>
+
+      <text x="94" y="360" fill="#9aa3b7" font-size="15">
+        <tspan x="94" dy="0"><tspan fill="#f0c674" font-weight="600">Why</tspan>  It tests the mechanism instead of increasing the sample size.</tspan>
+        <tspan x="94" dy="28"><tspan fill="#f0c674" font-weight="600">Evidence</tspan>  x.test.ts · fake timers · retry was added in the last commit.</tspan>
+        <tspan x="94" dy="28"><tspan fill="#f0c674" font-weight="600">Risk</tspan>  It may fail for an unrelated reason; keep the log.</tspan>
+      </text>
+    </g>
+
+    <g transform="translate(64,500)">
+      <rect x="0" y="0" width="972" height="64" rx="16" fill="#161a23" stroke="#2a3040"/>
+      <circle cx="32" cy="32" r="12" fill="#2a3040"/>
+      <text x="54" y="38" fill="#8b93a7" font-size="17">Reply, or press Tab to make this ACE Move yours.</text>
+      <rect x="852" y="14" width="100" height="36" rx="10" fill="url(#accent)"/>
+      <text x="902" y="38" fill="#171a24" font-size="14" font-weight="700" text-anchor="middle">Send</text>
+    </g>
+
+    <text x="64" y="600" fill="#5f6779" font-size="12">Illustrative example. DSH ACE never sends automatically.</text>
+  </g>
+</svg>

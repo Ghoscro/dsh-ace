@@ -1,0 +1,65 @@
+{
+  "name": "@ghoscro/dsh-ace",
+  "version": "0.1.0",
+  "private": false,
+  "description": "An AI next-move advisor for DeepSeek Harness. Find a better next step, then press Tab to make it yours.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh-CN.md",
+    "INSTALL.md",
+    "MIGRATION.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "docs/cases.md",
+    "docs/demo.svg"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "ace",
+    "next-move",
+    "composer",
+    "ai-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ghoscro/dsh-ace.git"
+  },
+  "homepage": "https://github.com/Ghoscro/dsh-ace#readme",
+  "bugs": {
+    "url": "https://github.com/Ghoscro/dsh-ace/issues"
+  },
+  "author": "Micker Wenyu.Yang",
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-session-controller"
+      ]
+    },
+    "compatibility": {
+      "dsh": "0.2.1-rc.2"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

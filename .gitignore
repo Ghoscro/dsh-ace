@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+*.log
+diagnostics/
+backups/
+staging/
+staging-home/
+*.tgz
+.DS_Store
+Thumbs.db

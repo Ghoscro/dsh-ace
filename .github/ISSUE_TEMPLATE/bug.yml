@@ -1,0 +1,39 @@
+---
+name: Bug report
+about: ACE did not work, installed incorrectly, or showed a bad card
+title: "[bug] "
+labels: bug
+assignees: ''
+---
+
+## What happened
+
+<!-- One or two sentences. Do not paste private transcripts. -->
+
+## Expected
+
+## Environment
+
+- DSH version:
+- ACE version / commit:
+- OS:
+- Model route:
+- Automatic ACE on/off:
+
+## Reproduction
+
+1.
+2.
+3.
+
+## Card details (redacted)
+
+- Text:
+- Why:
+- Risk:
+- Did Tab fill the draft?
+
+## Logs
+
+Do not paste raw sessions, credentials, or diagnostics with model output. If a
+log is needed, redact it and state what was removed.

@@ -1,0 +1,30 @@
+---
+name: Feature / counterexample
+about: Suggest a new direction, or show a card that was still too obvious
+title: "[idea] "
+labels: enhancement
+assignees: ''
+---
+
+## The case
+
+What was the conversation about (redacted)? What did ACE show? What would have
+been more useful?
+
+## Why it matters
+
+Does this make the next step cheaper, clearer, or better sequenced?
+
+## Direction
+
+- [ ] advance
+- [ ] use an existing tool
+- [ ] reframe
+- [ ] verify
+- [ ] clarify
+- [ ] constrain / close
+- [ ] other
+
+## Cost / privacy impact
+
+Does this need another model call, more context, or a new network destination?
