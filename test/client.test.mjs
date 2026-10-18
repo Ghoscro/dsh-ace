@@ -146,6 +146,9 @@ test('apply registers both composer slots and the locale dictionary', () => {
   assert.equal(dictionaries[0].dictionary.zh.button, '深度预测')
   assert.equal(dictionaries[0].dictionary.zh.ace, '深度预测')
   assert.equal(dictionaries[0].dictionary.en.title, 'ACE Move')
+  assert.equal(dictionaries[0].dictionary.zh.mode_wild, '王牌预测')
+  assert.equal(dictionaries[0].dictionary.en.mode_wild, 'ACE')
+  assert.equal(dictionaries[0].dictionary.zh.mode_brainstorm, '脑暴思维')
   effects.forEach(dispose => { if (typeof dispose === 'function') dispose() })
 })
 

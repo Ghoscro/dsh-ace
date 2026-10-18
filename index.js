@@ -191,6 +191,13 @@ export function normalizeConfig(config = {}) {
     expertMaxTokens: clampInt(source.expertMaxTokens, 1000, 8000, 6000),
     expertSituationMaxTokens: clampInt(source.expertSituationMaxTokens, 300, 1600, 800),
     expertMinScore: clampNumber(source.expertMinScore, 0, 12, 5),
+    // USD per 1M tokens; override in the plugin config when the route changes.
+    pricing: {
+      cacheHit: clampNumber(source?.pricing?.cacheHit, 0, 1000, 0.028),
+      cacheMiss: clampNumber(source?.pricing?.cacheMiss, 0, 1000, 0.28),
+      output: clampNumber(source?.pricing?.output, 0, 1000, 0.42),
+      currency: typeof source?.pricing?.currency === 'string' ? source.pricing.currency.slice(0, 8) : 'USD',
+    },
     expertTemperature: clampNumber(source.expertTemperature, 0, 1.5, 0.7),
     reasoningEffort: ['none', 'minimal', 'low', 'medium', 'high'].includes(source.reasoningEffort)
       ? source.reasoningEffort
@@ -500,7 +507,7 @@ ${VOICE_SAMPLES_ZH}
 </sample>
 - 用他在 [THREAD] 里的词和句子长度。他口语就口语，他粗糙就粗糙；不要替他加礼貌、加总结。
 - text 里不要小标题、不要项目符号、不要书面连接词。
-- 疯批也要用他的口吻疯：他爱短句就用短句，他爱絮叨就絮叨。想法可以离谱，语气必须是他。`
+- 展开也要用他的口吻：他爱短句就用短句，他爱絮叨就絮叨。想法可以离谱，语气必须是他。`
 
 const VOICE_EN = `[VOICE - sound like them first, then go wild]
 The sample below is the user's own writing. Copy its register, not its content; do not answer it.
@@ -941,6 +948,49 @@ function sendJson(res, status, body) {
 }
 
 /**
+ * Normalise whatever token fields the provider returns.
+ * @param {object} usage - provider usage object.
+ * @returns {{inputTokens: number, outputTokens: number, hitTokens: number, missTokens: number, cacheKnown: boolean}} normalised usage.
+ */
+export function normalizeUsage(usage) {
+  const source = usage && typeof usage === 'object' ? usage : {}
+  const num = key => (typeof source[key] === 'number' && Number.isFinite(source[key]) ? source[key] : 0)
+  const pick = keys => {
+    for (const key of keys) if (num(key) > 0) return num(key)
+    return 0
+  }
+  const inputTokens = pick(['prompt_tokens', 'inputTokens', 'promptTokens', 'input_tokens'])
+  const outputTokens = pick(['completion_tokens', 'outputTokens', 'completionTokens', 'output_tokens'])
+  const hitTokens = pick(['prompt_cache_hit_tokens', 'cacheHitTokens', 'cachedInputTokens', 'cached_tokens', 'promptCacheHitTokens'])
+  let missTokens = pick(['prompt_cache_miss_tokens', 'cacheMissTokens', 'promptCacheMissTokens'])
+  const cacheKnown = hitTokens > 0 || missTokens > 0
+  if (cacheKnown && missTokens === 0 && inputTokens >= hitTokens) missTokens = inputTokens - hitTokens
+  if (!cacheKnown && inputTokens > 0) missTokens = inputTokens
+  return { inputTokens, outputTokens, hitTokens, missTokens, cacheKnown }
+}
+
+/**
+ * Turn token counts into money with the configured per-million prices.
+ * @param {object} usage - provider usage object.
+ * @param {{cacheHit: number, cacheMiss: number, output: number, currency?: string}} pricing - prices per 1M tokens.
+ * @returns {{cost: number, currency: string, hitRate: number, inputTokens: number, outputTokens: number, hitTokens: number, missTokens: number, cacheKnown: boolean}} cost row.
+ */
+export function usageCost(usage, pricing) {
+  const normal = normalizeUsage(usage)
+  const prices = pricing && typeof pricing === 'object' ? pricing : {}
+  const cacheHit = typeof prices.cacheHit === 'number' ? prices.cacheHit : 0.028
+  const cacheMiss = typeof prices.cacheMiss === 'number' ? prices.cacheMiss : 0.28
+  const output = typeof prices.output === 'number' ? prices.output : 0.42
+  const cost = (normal.hitTokens * cacheHit + normal.missTokens * cacheMiss + normal.outputTokens * output) / 1_000_000
+  return {
+    cost: Math.round(cost * 1_000_000) / 1_000_000,
+    currency: typeof prices.currency === 'string' ? prices.currency : 'USD',
+    hitRate: normal.inputTokens > 0 ? Math.round((normal.hitTokens / normal.inputTokens) * 1000) / 1000 : 0,
+    ...normal,
+  }
+}
+
+/**
  * Append one usage row: numbers only, so cache hits are visible without content.
  * @param {{ status?: string, mode?: string, style?: string, promptChars?: number, usage?: object }} event - usage fields.
  */
@@ -955,6 +1005,7 @@ export function logUsage(event) {
     for (const [key, value] of Object.entries(usage)) {
       if (typeof value === 'number' && Number.isFinite(value)) numeric[key] = value
     }
+    const money = usageCost(usage, event.pricing)
     appendFileSync(join(directory, 'dsh-ace-usage.jsonl'), JSON.stringify({
       at: new Date().toISOString(),
       status: event.status ?? '',
@@ -962,6 +1013,19 @@ export function logUsage(event) {
       style: event.style ?? '',
       promptChars: typeof event.promptChars === 'number' ? event.promptChars : 0,
       usage: numeric,
+      cost: money.cost,
+      currency: money.currency,
+      prices: {
+        cacheHit: typeof event.pricing?.cacheHit === 'number' ? event.pricing.cacheHit : 0.028,
+        cacheMiss: typeof event.pricing?.cacheMiss === 'number' ? event.pricing.cacheMiss : 0.28,
+        output: typeof event.pricing?.output === 'number' ? event.pricing.output : 0.42,
+      },
+      hitRate: money.hitRate,
+      inputTokens: money.inputTokens,
+      outputTokens: money.outputTokens,
+      hitTokens: money.hitTokens,
+      missTokens: money.missTokens,
+      cacheKnown: money.cacheKnown,
     }) + '\n', 'utf8')
   } catch {
     // Usage logging must never break a prediction.
@@ -1383,7 +1447,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
   req.on('close', onClose)
   try {
     const result = await generatePrediction(ctx, config, { transcript, cwd, count, locale, mode, style }, controller.signal)
-    logUsage({ status: 'ok', mode: result.mode ?? mode, style: result.style ?? style, promptChars: result.promptChars, usage: result.usage })
+    logUsage({ status: 'ok', mode: result.mode ?? mode, style: result.style ?? style, promptChars: result.promptChars, usage: result.usage, pricing: config.pricing })
     if (result.warning) {
       logPredictionEvent({ status: 'fallback', sessionId, mode: result.mode ?? mode, style: result.style ?? style, warning: String(result.warning).slice(0, 300) })
     }

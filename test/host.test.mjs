@@ -8,7 +8,7 @@ import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
-  findBannedPhrase, cleanBannedPhrases, logUsage, transcriptWindow,
+  findBannedPhrase, cleanBannedPhrases, logUsage, normalizeUsage, transcriptWindow, usageCost,
   ACE_MODES,
 } from '../index.js'
 
@@ -724,6 +724,10 @@ test('usage rows record numbers only, never prompt text', () => {
   assert.equal(row.promptChars, 1234)
   assert.equal(row.usage.prompt_cache_hit_tokens, 800)
   assert.equal('note' in row.usage, false)
+  assert.equal(typeof row.cost, 'number')
+  assert.equal(row.currency, 'USD')
+  assert.equal(row.hitRate, 0.889)
+  assert.equal(row.prices.cacheMiss, 0.28)
   assert.equal(JSON.stringify(row).includes('第'), false)
 })
 
@@ -747,4 +751,25 @@ test('two different sessions share the static head, so the cache can hit across 
   const second = headOf([{ role: 'user', text: '帮我查一下这个报错' }])
   assert.equal(first, second)
   assert.ok(first.length > 900, `shared head should be worth caching, got ${first.length}`)
+})
+
+test('usage cost separates cache hits from misses and prices them', () => {
+  const usage = { prompt_tokens: 1000, completion_tokens: 100, prompt_cache_hit_tokens: 800, prompt_cache_miss_tokens: 200 }
+  const row = usageCost(usage, { cacheHit: 0.028, cacheMiss: 0.28, output: 0.42, currency: 'USD' })
+  assert.equal(row.hitTokens, 800)
+  assert.equal(row.missTokens, 200)
+  assert.equal(row.inputTokens, 1000)
+  assert.equal(row.hitRate, 0.8)
+  const expected = Math.round(((800 * 0.028 + 200 * 0.28 + 100 * 0.42) / 1_000_000) * 1e6) / 1e6
+  assert.equal(row.cost, expected)
+  assert.equal(row.currency, 'USD')
+})
+
+test('usage without cache fields is treated as all misses, not as free tokens', () => {
+  const row = usageCost({ inputTokens: 500, outputTokens: 50 }, { cacheHit: 0.028, cacheMiss: 0.28, output: 0.42 })
+  assert.equal(row.cacheKnown, false)
+  assert.equal(row.hitTokens, 0)
+  assert.equal(row.missTokens, 500)
+  const expected = Math.round(((500 * 0.28 + 50 * 0.42) / 1_000_000) * 1e6) / 1e6
+  assert.equal(row.cost, expected)
 })

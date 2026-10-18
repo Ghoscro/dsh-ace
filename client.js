@@ -20,7 +20,7 @@ const zh = {
   card: '深度预测', ace: '深度预测',
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
   salvaged: '模型没按结构化格式返回，已把原文放进卡片',
-  mode: '模式', mode_safe: '保守安全', mode_standard: '常规推理', mode_brainstorm: '脑暴思维', mode_wild: '疯批脑暴',
+  mode: '模式', mode_safe: '保守安全', mode_standard: '常规推理', mode_brainstorm: '脑暴思维', mode_wild: '王牌预测',
 }
 const en = {
   title: 'ACE Move', loading: 'ACE is predicting your next move…', refresh: 'Think again',
@@ -34,7 +34,7 @@ const en = {
   card: 'ACE Move', ace: 'ACE',
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
   salvaged: 'The model did not return structured JSON; its raw answer is in the card',
-  mode: 'Mode', mode_safe: 'Safe', mode_standard: 'Standard', mode_brainstorm: 'Brainstorm', mode_wild: 'Wild',
+  mode: 'Mode', mode_safe: 'Safe', mode_standard: 'Standard', mode_brainstorm: 'Brainstorm', mode_wild: 'ACE',
 }
 
 function clip(value, limit) {

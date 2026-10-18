@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The fourth mode is named 王牌预测 in the Chinese UI and ACE in the English
+  UI; the internal id stays `wild` so saved settings keep working.
+- Usage rows now carry `cost`, `currency`, `hitRate` and hit/miss token counts,
+  priced with the configurable `pricing` block (USD per 1M tokens by default).
 - The expert prompt is ordered for provider prefix caching: identical head,
   append-only transcript trimmed in blocks (with an 8k-character budget), mode
   and evidence moved to the volatile tail. Each prediction also writes one
