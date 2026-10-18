@@ -100,6 +100,7 @@
 - **暂停：** 停止自动建议；`✦ 深度预测` 仍可按需使用。
 - **模型：** 使用当前 DSH agent default，或插件配置的 route。
 - **隐私：** 最近对话和本地证据包会发给选中的模型；不写入会话，不跨会话学习。把 `captureSamples` 设为 false 本地也不留。
+- **账本：** 每个会话留一份只追加的记录，prompt 从这份记录重建，前缀只会变长；超过 `ledgerMaxEntries` 时最旧的部分写到归档文件，并用确定性摘要顶上。`ledger: false` 关掉。
 - **样本：** 最近 50 次深度预测的候选、原始回答和最后一条用户消息留在 `diagnostics/dsh-ace-samples.jsonl`；`npm run sweep` 离线按各档分数线重算，不调用模型。
 - **记账：** 每次预测往 `diagnostics/dsh-ace-usage.jsonl` 追加一行，带会话、轮次、token、缓存命中和按 `pricing` 折算的钱。
 - **成本：** 每次 ACE 建议一次模型调用。发布前会补 fast/expert × 短/长上下文的真实 token 表；自动 ACE 是较贵的模式，只想按需使用时可以暂停。

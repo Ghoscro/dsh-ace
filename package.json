@@ -25,7 +25,8 @@
     "docs/cases.md",
     "docs/demo.svg",
     "docs/product-plan.md",
-    "scripts/threshold-sweep.mjs"
+    "scripts/threshold-sweep.mjs",
+    "ledger.js"
   ],
   "keywords": [
     "dsh-plugin",

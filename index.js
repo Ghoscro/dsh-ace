@@ -13,6 +13,7 @@
 import { execFile } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { ingestLedger } from './ledger.js'
 
 /** Public plugin name used by Cordis. */
 export const name = 'dsh-ace'
@@ -193,6 +194,11 @@ export function normalizeConfig(config = {}) {
     expertMinScore: clampNumber(source.expertMinScore, 0, 12, 5),
     captureSamples: source.captureSamples !== false,
     sampleLimit: clampInt(source.sampleLimit, 10, 200, 50),
+    // Cognitive ledger: prompt from an append-only record instead of the window.
+    ledger: source.ledger !== false,
+    autoArchive: source.autoArchive !== false,
+    ledgerMaxEntries: clampInt(source.ledgerMaxEntries, 40, 400, 160),
+    ledgerKeep: clampInt(source.ledgerKeep, 20, 200, 60),
     // USD per 1M tokens; override in the plugin config when the route changes.
     pricing: {
       cacheHit: clampNumber(source?.pricing?.cacheHit, 0, 1000, 0.028),
@@ -1349,8 +1355,23 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   const mode = resolveMode(input.style ?? input.mode)
   const maxTokens = Math.min(config.expertMaxTokens, MODE_MAX_TOKENS[mode])
   const evidence = await collectEvidence(input.cwd ?? '')
-  const situation = buildDeterministicSituation(input.transcript)
-  const movesPrompt = buildExpertPrompt({ ...input, mode, evidence, situation })
+  const home = process.env.DSH_HOME
+  const ingested = config.ledger && home
+    ? ingestLedger({
+      dir: join(home, 'diagnostics'),
+      sessionId: input.sessionId,
+      transcript: input.transcript,
+      maxEntries: config.ledgerMaxEntries,
+      keep: config.ledgerKeep,
+      autoArchive: config.autoArchive,
+    })
+    : { rows: input.transcript, archived: 0, gap: false }
+  const sourceTranscript = ingested.rows.length > 0 ? ingested.rows : input.transcript
+  if (ingested.archived > 0 || ingested.gap) {
+    logPredictionEvent({ status: 'ledger', sessionId: input.sessionId, archived: ingested.archived, gap: ingested.gap === true })
+  }
+  const situation = buildDeterministicSituation(sourceTranscript)
+  const movesPrompt = buildExpertPrompt({ ...input, transcript: sourceTranscript, mode, evidence, situation })
   let result
   let selection
   try {
