@@ -19,6 +19,7 @@ const zh = {
   deepLoading: '深度预测正在推演下一步…', autoExpert: '每轮自动生成深度预测建议',
   card: '深度预测', ace: '深度预测',
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
+  salvaged: '模型没按结构化格式返回，已把原文放进卡片',
   mode: '模式', mode_safe: '保守安全', mode_standard: '常规推理', mode_brainstorm: '脑暴思维', mode_wild: '疯批脑暴',
 }
 const en = {
@@ -32,6 +33,7 @@ const en = {
   deepLoading: 'ACE is reasoning about the next move…', autoExpert: 'Generate one ACE suggestion every turn',
   card: 'ACE Move', ace: 'ACE',
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
+  salvaged: 'The model did not return structured JSON; its raw answer is in the card',
   mode: 'Mode', mode_safe: 'Safe', mode_standard: 'Standard', mode_brainstorm: 'Brainstorm', mode_wild: 'Wild',
 }
 
@@ -112,7 +114,7 @@ function readSettings() {
 
 function createStore() {
   let state = {
-    status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', warning: '', startedAt: 0,
+    status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', salvaged: false, warning: '', startedAt: 0,
     turnSeq: -1, triggeredTurnSeq: -1, accepted: null,
   }
   const listeners = new Set()
@@ -130,7 +132,7 @@ function createStore() {
 }
 
 const EMPTY_STATE = Object.freeze({
-  status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', warning: '', startedAt: 0,
+  status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', salvaged: false, warning: '', startedAt: 0,
   turnSeq: -1, triggeredTurnSeq: -1, accepted: null,
 })
 const EMPTY_STORE = { get: () => EMPTY_STATE, subscribe: () => () => {} }
@@ -284,6 +286,7 @@ function apply(ctx) {
           model: typeof payload.value?.model === 'string' ? payload.value.model : '',
           mode: typeof payload.value?.mode === 'string' ? payload.value.mode : mode,
           style: typeof payload.value?.style === 'string' ? payload.value.style : style,
+          salvaged: payload.value?.salvaged === true,
           warning: typeof payload.value?.warning === 'string' ? payload.value.warning : '',
           turnSeq: end ? end.seq : store.get().turnSeq,
           triggeredTurnSeq: end ? end.seq : store.get().triggeredTurnSeq,
@@ -607,8 +610,9 @@ function apply(ctx) {
           type: 'button', className: 'dcp-icon', title: t('retry'), 'aria-label': t('retry'), onClick: refresh,
         }, '↻'))
       : null,
-    state.warning && state.mode === 'fast-fallback'
-      ? React.createElement('div', { className: 'dcp-warning' }, `${t('fallback')}：${state.warning}`)
+    state.warning && (state.mode === 'fast-fallback' || state.salvaged)
+      ? React.createElement('div', { className: 'dcp-warning' },
+        `${state.salvaged ? t('salvaged') : t('fallback')}：${state.warning}`)
       : null,
     rows,
     state.status === 'idle' && state.candidates.length === 0 && state.accepted === null

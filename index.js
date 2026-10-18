@@ -487,9 +487,50 @@ const MODE_DISCIPLINE = `CONTENT DISCIPLINE (every mode):
 - Difficulty, cost or the chance of failure is not by itself a reason to drop a direction. Only the user's explicit limits are binding.
 - A mode never collapses into safe: when you propose a tamer move, justify it as better, not as safer.`
 
+/** The output contract is restated last so a long mode prompt cannot bury it. */
+const FORMAT_BLOCK = `[FORMAT - binding]
+- Output one JSON object per line, each one complete and closed on the same line. No prose, markdown, headings or code fences outside the objects.
+- Keep text under 800 characters, why under 300, risk under 200. If room runs short, shorten text first; never drop a closing brace to fit more detail.
+- If you cannot produce a schema-valid object, output a single line of plain text with your best next move instead of inventing fields; the host will salvage it.`
+
 /** Resolve a request's mode to one of the four, defaulting to standard. */
 export function resolveMode(value) {
   return ACE_MODES.includes(value) ? value : 'standard'
+}
+
+/**
+ * Describe a failed answer by shape only, so diagnostics never store transcript-like text.
+ * @param {string} text - raw model output.
+ * @returns {{chars: number, opens: number, closes: number, fenced: boolean, startsWithBrace: boolean}} shape.
+ */
+function describeShape(text) {
+  const value = String(text ?? '')
+  return {
+    chars: value.length,
+    opens: (value.match(/\{/g) ?? []).length,
+    closes: (value.match(/\}/g) ?? []).length,
+    fenced: /```/.test(value),
+    startsWithBrace: value.trim().startsWith('{'),
+  }
+}
+
+/**
+ * Turn a prose answer into one usable move instead of failing the whole card.
+ * @param {string} text - raw model output.
+ * @returns {object | null} move, or null when there is nothing to salvage.
+ */
+export function salvageExpertText(text) {
+  const cleaned = String(text ?? '')
+    .replace(/```[a-zA-Z]*\s*/g, '')
+    .replace(/^\s*(?:-{3,}|#{1,6}\s*$)/gm, '')
+    .trim()
+  if (cleaned.length < 40) return null
+  return {
+    text: clip(cleaned, 2000),
+    why: '', evidence: '', risk: '',
+    action: 'advance', value: 6, novelty: 6, worth_extra_step: 6,
+    slot: 'non_obvious', over_obvious: true,
+  }
 }
 
 /**
@@ -513,7 +554,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `[MODE]\n${MODE_POLICY[mode]}\n\n${MODE_DISCIPLINE}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `[MODE]\n${MODE_POLICY[mode]}\n\n${MODE_DISCIPLINE}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -545,7 +586,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}`,
+    user: `[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=1`,
   }
 }
 
@@ -991,13 +1032,31 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     logPredictionEvent({
       status: 'expert-retry',
       message: String(error?.message ?? error).slice(0, 300),
+      shape: describeShape(result?.text),
     })
     if (signal.aborted) throw abortError(signal, 'expert stage aborted')
     const retryPrompt = buildSingleMovePrompt({ ...input, mode, evidence, situation })
     result = await callExpertStage(
       ctx, route, retryPrompt, config, Math.min(12_000, config.expertMovesTimeoutMs), 1400, signal,
     )
-    selection = parseExpertSelection(result.text, 5)
+    try {
+      selection = parseExpertSelection(result.text, 5)
+    } catch (retryError) {
+      // A long, free-form answer is still an answer: keep it instead of failing the card.
+      const salvaged = salvageExpertText(result.text)
+      if (!salvaged) throw retryError
+      logPredictionEvent({ status: 'expert-salvage', shape: describeShape(result.text) })
+      return {
+        mode: 'expert',
+        style: mode,
+        candidates: [salvaged],
+        model: `${route.provider}/${route.model}`,
+        evidenceUsed: evidence !== '(none)' && evidence !== '(not a git repository or no changes)',
+        usage: result.usage,
+        salvaged: true,
+        warning: 'the model did not return structured JSON; its raw answer became the card',
+      }
+    }
   }
   const best = selectBestMove(selection, config.expertMinScore)
   const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
@@ -1160,6 +1219,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
         value: {
           mode: result.mode ?? mode,
           style: result.style ?? style,
+          salvaged: result.salvaged === true,
           candidates: result.candidates,
           model: result.model,
           warning: result.warning,

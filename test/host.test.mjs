@@ -2,9 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
 import {
-  buildExpertPrompt, buildPrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
+  buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
-  parseExpertSelection, parseSituation, resolveMode, resolveModel, sanitizeTranscript, selectBestMove,
+  parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
   ACE_MODES,
 } from '../index.js'
 
@@ -468,4 +468,62 @@ test('handleRequest forwards the requested mode and reports it back', async () =
   const health = response()
   await handleRequest(ctx, normalizeConfig(), new Map(), healthReq, health)
   assert.deepEqual(JSON.parse(health.body).value.styles, ['safe', 'standard', 'brainstorm', 'wild'])
+})
+
+test('a long prose answer is salvaged instead of failing the card', async () => {
+  const prose = '先别急着写代码。把这个点子拆成三层：一是玩家每局要做的第一个决定，二是这个决定在两分钟后产生什么反馈，' +
+    '三是反馈如何被另一个玩家看见。把这三层写成一段可以直接发给别的 AI 的任务描述，要求它给出可玩的灰盒规则。'
+  const calls = { count: 0 }
+  const ctx = { get: () => undefined, llm: llmSequence([prose, prose], calls) }
+  const result = await generateExpertPrediction(ctx, normalizeConfig(), {
+    transcript: [{ role: 'user', text: '我有个点子，想做点疯的' }, { role: 'assistant', text: '想从哪开始？' }],
+    count: 4, cwd: '', locale: 'zh-CN', style: 'wild',
+  }, new AbortController().signal)
+  assert.equal(result.mode, 'expert')
+  assert.equal(result.salvaged, true)
+  assert.equal(result.candidates.length, 1)
+  assert.match(result.candidates[0].text, /灰盒规则/)
+  assert.match(result.warning, /structured JSON/)
+})
+
+test('a truncated JSON answer is salvaged and a short garbage answer is not', async () => {
+  const truncated = '{"text":"先做一版只跑单局的灰盒，把三个决策点画在纸上，再让另一个 AI 把它写成规则表，' +
+    '顺便生成一份可以交给美术的情绪板","why":"先在纸上验证决策密度，避免直接进引擎'
+  const ctx = { get: () => undefined, llm: llmSequence([truncated, truncated]) }
+  const result = await generateExpertPrediction(ctx, normalizeConfig(), {
+    transcript: [{ role: 'user', text: '随便说个点子' }, { role: 'assistant', text: '好' }],
+    count: 4, cwd: '', locale: 'zh-CN', style: 'wild',
+  }, new AbortController().signal)
+  assert.equal(result.salvaged, true)
+  assert.match(result.candidates[0].text, /情绪板/)
+
+  const junk = { get: () => undefined, llm: llmSequence(['not json', 'not json', '["回退"]']) }
+  const fallback = await generatePrediction(junk, normalizeConfig(), {
+    transcript: [{ role: 'user', text: '继续' }], count: 2, cwd: '', locale: 'zh-CN', mode: 'expert',
+  }, new AbortController().signal)
+  assert.equal(fallback.mode, 'fast-fallback')
+})
+
+test('the output contract is restated last so a long mode prompt cannot bury it', () => {
+  const input = { transcript: [{ role: 'user', text: '随便' }], count: 4, locale: 'zh-CN', mode: 'wild' }
+  for (const prompt of [buildExpertPrompt(input), buildSingleMovePrompt(input)]) {
+    const tail = prompt.user.slice(-600)
+    assert.match(tail, /\[FORMAT - binding\]/)
+    assert.match(tail, /closing brace/)
+  }
+})
+
+test('handleRequest marks a salvaged card in the response', async () => {
+  const prose = '把这件事写成一份给别的 AI 的开工说明：先定义玩家第一分钟的目标，再写出失败时玩家会损失什么，' +
+    '最后要求它给出两张可打印的规则卡，并标注哪些数值需要真人测试才能确定。'
+  const ctx = { get: () => undefined, llm: llmSequence([prose, prose]) }
+  const out = response()
+  await handleRequest(ctx, normalizeConfig(), new Map(), request({
+    sessionId: 's1', count: 4, locale: 'zh-CN', cwd: '', mode: 'expert', style: 'wild',
+    transcript: [{ role: 'user', text: '我想做个疯的' }, { role: 'assistant', text: '说说看' }],
+  }), out)
+  const payload = JSON.parse(out.body)
+  assert.equal(payload.value.salvaged, true)
+  assert.equal(payload.value.style, 'wild')
+  assert.equal(payload.value.candidates.length, 1)
 })

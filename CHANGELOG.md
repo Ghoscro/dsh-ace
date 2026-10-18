@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A model answer that arrives as prose or truncated JSON is salvaged into one
+  card with an explicit note, instead of failing the turn and falling back to a
+  fast suggestion. The output contract is now restated after the mode prompt so a
+  long `wild` prompt cannot bury it.
 - Four equal-status modes: `safe`, `standard`, `brainstorm`, `wild`. Each mode
   carries its own prompt policy and output budget, the card shows the mode that
   produced it, and the settings panel switches it. Unknown or missing modes fall
