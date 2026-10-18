@@ -94,11 +94,14 @@ test('pickTurnEnd finds the latest turn boundary and its reason', () => {
 
 test('readSettings falls back safely and normalizes count', () => {
   const { exports, window } = loadClient()
-  assert.deepEqual(JSON.parse(JSON.stringify(exports.__test.readSettings())), { enabled: true, paused: false, count: 4, autoExpert: true })
-  window.localStorage.value = JSON.stringify({ enabled: false, paused: true, count: 99, autoExpert: true })
-  assert.deepEqual(JSON.parse(JSON.stringify(exports.__test.readSettings())), { enabled: false, paused: true, count: 4, autoExpert: true })
+  const base = { enabled: true, paused: false, count: 4, autoExpert: true, mode: 'standard' }
+  assert.deepEqual(JSON.parse(JSON.stringify(exports.__test.readSettings())), base)
+  window.localStorage.value = JSON.stringify({ enabled: false, paused: true, count: 99, autoExpert: true, mode: 'wild' })
+  assert.deepEqual(JSON.parse(JSON.stringify(exports.__test.readSettings())), { ...base, enabled: false, paused: true, mode: 'wild' })
+  window.localStorage.value = JSON.stringify({ mode: 'nope' })
+  assert.equal(exports.__test.readSettings().mode, 'standard')
   window.localStorage.value = '{broken'
-  assert.deepEqual(JSON.parse(JSON.stringify(exports.__test.readSettings())), { enabled: true, paused: false, count: 4, autoExpert: true })
+  assert.deepEqual(JSON.parse(JSON.stringify(exports.__test.readSettings())), base)
 })
 
 test('apply registers both composer slots and the locale dictionary', () => {

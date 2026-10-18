@@ -87,6 +87,7 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
   })
 
   const components = {}
+  window.localStorage.setItem('dsh.composer-predict.settings.v1', JSON.stringify({ mode: 'wild' }))
   const ctx = {
     effect(fn) { return fn() },
     locale: { register() { return () => {} } },
@@ -143,6 +144,15 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
   assert.equal(fetchCalls[0].body.cwd, 'E:/project')
   assert.equal(fetchCalls[0].body.count, 4)
   assert.equal(fetchCalls[0].body.mode, 'expert')
+  assert.equal(fetchCalls[0].body.style, 'wild', 'the saved mode is sent with the request')
+
+  const settingsButton = [...container.querySelectorAll('button')]
+    .find(button => button.getAttribute('title') === 'settings')
+  await act(async () => { settingsButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+  const modeButtons = [...container.querySelectorAll('.dcp-mode')]
+  assert.equal(modeButtons.length, 4)
+  assert.deepEqual(modeButtons.map(button => button.textContent), ['mode_safe', 'mode_standard', 'mode_brainstorm', 'mode_wild'])
+  assert.equal(modeButtons.filter(button => button.getAttribute('aria-pressed') === 'true').length, 1)
 
   const card = document.createElement('div')
   card.setAttribute('data-composer-card', '')

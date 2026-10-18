@@ -4,7 +4,8 @@ import { Readable } from 'node:stream'
 import {
   buildExpertPrompt, buildPrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
-  parseExpertSelection, parseSituation, resolveModel, sanitizeTranscript, selectBestMove,
+  parseExpertSelection, parseSituation, resolveMode, resolveModel, sanitizeTranscript, selectBestMove,
+  ACE_MODES,
 } from '../index.js'
 
 test('normalizeConfig bounds every numeric field and keeps the route local', () => {
@@ -384,4 +385,87 @@ test('handleRequest rejects a disabled plugin and unknown routes', async () => {
   const unknown = response()
   await handleRequest(ctx, normalizeConfig(), new Map(), unknownReq, unknown)
   assert.equal(unknown.status, 404)
+})
+
+test('resolveMode keeps the four modes and defaults to standard', () => {
+  for (const id of ['safe', 'standard', 'brainstorm', 'wild']) assert.equal(resolveMode(id), id)
+  assert.equal(resolveMode('nope'), 'standard')
+  assert.equal(resolveMode(undefined), 'standard')
+  assert.deepEqual(ACE_MODES, ['safe', 'standard', 'brainstorm', 'wild'])
+})
+
+test('every mode injects its own policy and none collapses into safe', () => {
+  const input = {
+    transcript: [{ role: 'user', text: '这个点子怎么落地' }, { role: 'assistant', text: '要我先拆一版吗' }],
+    count: 4,
+    locale: 'zh-CN',
+  }
+  const prompts = Object.fromEntries(
+    ACE_MODES.map(mode => [mode, buildExpertPrompt({ ...input, mode }).user]),
+  )
+  for (const mode of ACE_MODES) {
+    assert.match(prompts[mode], new RegExp(`\\[MODE\\]`))
+    assert.match(prompts[mode], new RegExp(`mode=${mode}`))
+    assert.match(prompts[mode], /CONTENT DISCIPLINE/)
+  }
+  assert.match(prompts.safe, /MODE safe:/)
+  assert.match(prompts.wild, /MODE wild:/)
+  assert.equal(prompts.wild.includes('MODE safe:'), false)
+  assert.equal(prompts.brainstorm.includes('MODE standard:'), false)
+  const single = buildExpertPrompt({ ...input, mode: 'wild' }).user
+  assert.match(single, /break the boundary/)
+})
+
+function llmCapturing(text, seen) {
+  return {
+    stream(options) {
+      seen.push(options)
+      return (async function* stream() {
+        yield { type: 'text-delta', text }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      })()
+    },
+  }
+}
+
+test('each mode caps the expert call at its own budget without raising the user ceiling', async () => {
+  const transcript = [
+    { role: 'user', text: '把我这个想法写成能开工的任务' },
+    { role: 'assistant', text: '想先从哪个方向展开？' },
+  ]
+  for (const [mode, expected] of [['safe', 2200], ['standard', 4000], ['brainstorm', 5600], ['wild', 6000]]) {
+    const seen = []
+    const ctx = { get: () => undefined, llm: llmCapturing(EXPERT_JSONL, seen) }
+    await generateExpertPrediction(ctx, normalizeConfig(), {
+      transcript, count: 4, cwd: '', locale: 'zh-CN', mode,
+    }, new AbortController().signal)
+    assert.equal(seen[0].maxTokens, expected, mode)
+  }
+  const capped = []
+  const ctx = { get: () => undefined, llm: llmCapturing(EXPERT_JSONL, capped) }
+  await generateExpertPrediction(ctx, normalizeConfig({ expertMaxTokens: 2500 }), {
+    transcript, count: 4, cwd: '', locale: 'zh-CN', mode: 'wild',
+  }, new AbortController().signal)
+  assert.equal(capped[0].maxTokens, 2500)
+})
+
+test('handleRequest forwards the requested mode and reports it back', async () => {
+  const seen = []
+  const ctx = { get: () => undefined, llm: llmCapturing(EXPERT_JSONL, seen) }
+  const out = response()
+  await handleRequest(ctx, normalizeConfig(), new Map(), request({
+    sessionId: 's1', count: 4, locale: 'zh-CN', cwd: '', mode: 'expert', style: 'wild',
+    transcript: [{ role: 'user', text: '帮我修测试' }, { role: 'assistant', text: '要跑全量吗？' }],
+  }), out)
+  assert.equal(out.status, 200)
+  const payload = JSON.parse(out.body)
+  assert.equal(payload.value.style, 'wild')
+  assert.match(seen[0].messages?.[1]?.content ?? JSON.stringify(seen[0]), /MODE wild:/)
+
+  const healthReq = Readable.from([])
+  healthReq.method = 'GET'
+  healthReq.url = '/composer-predict/health'
+  const health = response()
+  await handleRequest(ctx, normalizeConfig(), new Map(), healthReq, health)
+  assert.deepEqual(JSON.parse(health.body).value.styles, ['safe', 'standard', 'brainstorm', 'wild'])
 })

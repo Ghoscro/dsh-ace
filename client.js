@@ -5,6 +5,9 @@ const { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore 
 const NS = 'dsh-ace'
 const SETTINGS_KEY = 'dsh.composer-predict.settings.v1'
 const ROUTE = '/composer-predict/predict'
+/** Four equal-status advisory modes; the host owns the prompt policy. */
+const MODES = ['safe', 'standard', 'brainstorm', 'wild']
+const clampMode = value => (MODES.includes(value) ? value : 'standard')
 
 const zh = {
   title: '深度预测', loading: '正在预测下一句…', refresh: '重新推演', close: '关闭深度预测',
@@ -16,6 +19,7 @@ const zh = {
   deepLoading: '深度预测正在推演下一步…', autoExpert: '每轮自动生成深度预测建议',
   card: '深度预测', ace: '深度预测',
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
+  mode: '模式', mode_safe: '保守安全', mode_standard: '常规推理', mode_brainstorm: '脑暴思维', mode_wild: '疯批脑暴',
 }
 const en = {
   title: 'ACE Move', loading: 'ACE is predicting your next move…', refresh: 'Think again',
@@ -28,6 +32,7 @@ const en = {
   deepLoading: 'ACE is reasoning about the next move…', autoExpert: 'Generate one ACE suggestion every turn',
   card: 'ACE Move', ace: 'ACE',
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
+  mode: 'Mode', mode_safe: 'Safe', mode_standard: 'Standard', mode_brainstorm: 'Brainstorm', mode_wild: 'Wild',
 }
 
 function clip(value, limit) {
@@ -87,7 +92,7 @@ function clampCount(value) {
 }
 
 function readSettings() {
-  const fallback = { enabled: true, paused: false, count: 4, autoExpert: true }
+  const fallback = { enabled: true, paused: false, count: 4, autoExpert: true, mode: 'standard' }
   try {
     const raw = window.localStorage.getItem(SETTINGS_KEY)
     if (raw === null) return fallback
@@ -98,6 +103,7 @@ function readSettings() {
       paused: parsed.paused === true,
       count: clampCount(parsed.count),
       autoExpert: parsed.autoExpert !== false,
+      mode: clampMode(parsed.mode),
     }
   } catch {
     return fallback
@@ -106,7 +112,7 @@ function readSettings() {
 
 function createStore() {
   let state = {
-    status: 'idle', candidates: [], error: '', model: '', mode: 'expert', warning: '', startedAt: 0,
+    status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', warning: '', startedAt: 0,
     turnSeq: -1, triggeredTurnSeq: -1, accepted: null,
   }
   const listeners = new Set()
@@ -124,7 +130,7 @@ function createStore() {
 }
 
 const EMPTY_STATE = Object.freeze({
-  status: 'idle', candidates: [], error: '', model: '', mode: 'expert', warning: '', startedAt: 0,
+  status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', warning: '', startedAt: 0,
   turnSeq: -1, triggeredTurnSeq: -1, accepted: null,
 })
 const EMPTY_STORE = { get: () => EMPTY_STATE, subscribe: () => () => {} }
@@ -215,6 +221,7 @@ function apply(ctx) {
       if (current.status === 'loading') return
       const count = clampCount(options.count ?? settings.count)
       const mode = options.mode === 'fast' ? 'fast' : 'expert'
+      const style = clampMode(options.style ?? settings.mode)
       abort()
       const mine = new AbortController()
       controller = mine
@@ -239,6 +246,7 @@ function apply(ctx) {
             locale: typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'zh-CN',
             count,
             mode,
+            style,
             transcript,
           }),
           signal: mine.signal,
@@ -275,6 +283,7 @@ function apply(ctx) {
           status: 'ready', candidates,
           model: typeof payload.value?.model === 'string' ? payload.value.model : '',
           mode: typeof payload.value?.mode === 'string' ? payload.value.mode : mode,
+          style: typeof payload.value?.style === 'string' ? payload.value.style : style,
           warning: typeof payload.value?.warning === 'string' ? payload.value.warning : '',
           turnSeq: end ? end.seq : store.get().turnSeq,
           triggeredTurnSeq: end ? end.seq : store.get().triggeredTurnSeq,
@@ -333,6 +342,12 @@ function apply(ctx) {
     '.dcp-undo{display:flex;align-items:center;gap:8px;margin-top:4px;padding:3px 6px;font-size:11px;opacity:.72}',
     '.dcp-undo button{border:0;background:transparent;color:inherit;font:inherit;text-decoration:underline;cursor:pointer;padding:0}',
     '.dcp-settings{margin-top:6px;padding-top:7px;border-top:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.2));display:grid;gap:5px;font-size:12px}',
+    '.dcp-modes{display:flex;flex-wrap:wrap;gap:4px;align-items:center}',
+    '.dcp-modes-label{opacity:.6;margin-right:2px}',
+    '.dcp-mode{height:22px;padding:0 7px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.28));border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:11px;cursor:pointer;opacity:.75}',
+    '.dcp-mode:hover,.dcp-mode:focus-visible{opacity:1}',
+    '.dcp-mode-on{background:var(--dsw-specific-bubble,#ffffff14);opacity:1;font-weight:600}',
+    '.dcp-mode-chip{font-size:11px;opacity:.6;margin-left:2px}',
     '.dcp-settings label{display:flex;align-items:center;gap:6px}',
     '.dcp-settings select{border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.32));border-radius:5px;background:transparent;color:inherit;font:inherit;font-size:12px;padding:1px 4px}',
     '.dcp-settings small{opacity:.55;line-height:1.4;font-size:10px}',
@@ -560,6 +575,7 @@ function apply(ctx) {
     },
     React.createElement('div', { className: 'dcp-head' },
       React.createElement('span', { className: 'dcp-title' }, state.mode === 'expert' ? t('card') : t('title')),
+      React.createElement('span', { className: 'dcp-mode-chip' }, t(`mode_${state.style || settings.mode}`)),
       state.status === 'loading'
         ? React.createElement('span', { className: 'dcp-loading' }, state.mode === 'expert' ? t('deepLoading') : t('loading'))
         : state.status === 'ready'
@@ -605,6 +621,15 @@ function apply(ctx) {
       : null,
     settingsOpen
       ? React.createElement('div', { className: 'dcp-settings' },
+        React.createElement('div', { className: 'dcp-modes', role: 'group', 'aria-label': t('mode') },
+          React.createElement('span', { className: 'dcp-modes-label' }, t('mode')),
+          MODES.map(id => React.createElement('button', {
+            key: id,
+            type: 'button',
+            className: settings.mode === id ? 'dcp-mode dcp-mode-on' : 'dcp-mode',
+            'aria-pressed': settings.mode === id,
+            onClick: () => update({ mode: id }),
+          }, t(`mode_${id}`)))),
         React.createElement('label', null,
           React.createElement('input', {
             type: 'checkbox', checked: settings.enabled,

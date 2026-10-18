@@ -188,7 +188,7 @@ export function normalizeConfig(config = {}) {
     model: typeof source.model === 'string' ? source.model.trim() : '',
     count: clampInt(source.count, 1, 4, 4),
     maxTokens: clampInt(source.maxTokens, 80, 2000, 1200),
-    expertMaxTokens: clampInt(source.expertMaxTokens, 1000, 6000, 4000),
+    expertMaxTokens: clampInt(source.expertMaxTokens, 1000, 8000, 6000),
     expertSituationMaxTokens: clampInt(source.expertSituationMaxTokens, 300, 1600, 800),
     expertMinScore: clampNumber(source.expertMinScore, 0, 12, 5),
     expertTemperature: clampNumber(source.expertTemperature, 0, 1.5, 0.7),
@@ -469,6 +469,29 @@ export function buildDeterministicSituation(transcript) {
   }
 }
 
+/** The four equal-status advisory modes. None may collapse into another. */
+export const ACE_MODES = ['safe', 'standard', 'brainstorm', 'wild']
+
+/** Output budget per mode, still capped by the user's `expertMaxTokens`. */
+export const MODE_MAX_TOKENS = { safe: 2200, standard: 4000, brainstorm: 5600, wild: 6000 }
+
+const MODE_POLICY = {
+  safe: 'MODE safe: reversible, small, cheap-to-undo steps. Say how each move rolls back. Prefer the smallest step that still tests the real question; do not demand a rewrite or a new dependency when a reversible step exists.',
+  standard: 'MODE standard: the next step a competent engineer would actually take. Be direct and opinionated, name the concrete file, command or decision, and skip hedging.',
+  brainstorm: 'MODE brainstorm: open the space. Candidates must differ in kind, not wording: different mechanism, different field, different ambition. Two candidates may never be the same idea rephrased.',
+  wild: 'MODE wild: break the boundary the user imagined. Recombine mechanisms from unrelated fields, follow second- and third-order consequences, challenge the premise when the evidence allows, and write the move with enough concrete detail that another AI could start from it. Use the room you have; do not compress in order to stay brief.',
+}
+
+const MODE_DISCIPLINE = `CONTENT DISCIPLINE (every mode):
+- Keep three things distinguishable in why/risk: the user's stated goal, the assumptions you made to form this move, and the ideas you added. Never present an added idea as the user's own words.
+- Difficulty, cost or the chance of failure is not by itself a reason to drop a direction. Only the user's explicit limits are binding.
+- A mode never collapses into safe: when you propose a tamer move, justify it as better, not as safer.`
+
+/** Resolve a request's mode to one of the four, defaulting to standard. */
+export function resolveMode(value) {
+  return ACE_MODES.includes(value) ? value : 'standard'
+}
+
 /**
  * Build the expert next-move prompt from the deterministic situation and evidence.
  * @param {{ situation: object, transcript: Array<object>, evidence?: string, count: number, locale?: string }} input - prompt inputs.
@@ -478,6 +501,7 @@ export function buildExpertPrompt(input) {
   const transcript = Array.isArray(input.transcript) ? input.transcript : []
   const count = clampInt(input.count, 3, 5, 4)
   const locale = typeof input.locale === 'string' ? input.locale.toLowerCase() : 'zh'
+  const mode = resolveMode(input.mode)
   const style = transcript
     .filter(row => row.role === 'user')
     .slice(-8)
@@ -489,7 +513,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n[OUT]\nN=${count}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `[MODE]\n${MODE_POLICY[mode]}\n\n${MODE_DISCIPLINE}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -521,7 +545,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}`,
+    user: `[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}`,
   }
 }
 
@@ -951,14 +975,16 @@ async function callExpertStage(ctx, route, prompt, config, timeoutMs, maxTokens,
  */
 export async function generateExpertPrediction(ctx, config, input, signal) {
   const route = resolveModel(ctx, config)
+  const mode = resolveMode(input.style ?? input.mode)
+  const maxTokens = Math.min(config.expertMaxTokens, MODE_MAX_TOKENS[mode])
   const evidence = await collectEvidence(input.cwd ?? '')
   const situation = buildDeterministicSituation(input.transcript)
-  const movesPrompt = buildExpertPrompt({ ...input, evidence, situation })
+  const movesPrompt = buildExpertPrompt({ ...input, mode, evidence, situation })
   let result
   let selection
   try {
     result = await callExpertStage(
-      ctx, route, movesPrompt, config, config.expertMovesTimeoutMs, config.expertMaxTokens, signal,
+      ctx, route, movesPrompt, config, config.expertMovesTimeoutMs, maxTokens, signal,
     )
     selection = parseExpertSelection(result.text, 5)
   } catch (error) {
@@ -967,7 +993,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
       message: String(error?.message ?? error).slice(0, 300),
     })
     if (signal.aborted) throw abortError(signal, 'expert stage aborted')
-    const retryPrompt = buildSingleMovePrompt({ ...input, evidence, situation })
+    const retryPrompt = buildSingleMovePrompt({ ...input, mode, evidence, situation })
     result = await callExpertStage(
       ctx, route, retryPrompt, config, Math.min(12_000, config.expertMovesTimeoutMs), 1400, signal,
     )
@@ -979,6 +1005,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   const candidates = best && normalize(best.text) !== normalize(lastUser) ? [best] : []
   return {
     mode: 'expert',
+    style: mode,
     candidates,
     model: `${route.provider}/${route.model}`,
     evidenceUsed: evidence !== '(none)' && evidence !== '(not a git repository or no changes)',
@@ -1076,6 +1103,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
         timeoutMs: config.timeoutMs,
         expertTimeoutMs: config.expertMovesTimeoutMs,
         modes: ['fast', 'expert'],
+        styles: ACE_MODES,
       },
     })
     return
@@ -1107,6 +1135,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
   const count = clampInt(payload.count, 1, 4, config.count)
   const locale = typeof payload.locale === 'string' ? payload.locale.slice(0, 40) : 'zh-CN'
   const mode = payload.mode === 'expert' ? 'expert' : 'fast'
+  const style = resolveMode(payload.style)
   const transcript = sanitizeTranscript(payload.transcript, config)
   if (!transcript.some(row => row.role === 'user')) {
     sendJson(res, 200, { ok: true, value: { candidates: [], model: '', reason: 'no-user-message' } })
@@ -1121,7 +1150,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
   const onClose = () => controller.abort(new Error('request closed'))
   req.on('close', onClose)
   try {
-    const result = await generatePrediction(ctx, config, { transcript, cwd, count, locale, mode }, controller.signal)
+    const result = await generatePrediction(ctx, config, { transcript, cwd, count, locale, mode, style }, controller.signal)
     if (result.warning) {
       logPredictionEvent({ status: 'fallback', sessionId, mode: result.mode ?? mode, warning: String(result.warning).slice(0, 300) })
     }
@@ -1130,6 +1159,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
         ok: true,
         value: {
           mode: result.mode ?? mode,
+          style: result.style ?? style,
           candidates: result.candidates,
           model: result.model,
           warning: result.warning,

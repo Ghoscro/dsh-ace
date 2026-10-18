@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Four equal-status modes: `safe`, `standard`, `brainstorm`, `wild`. Each mode
+  carries its own prompt policy and output budget, the card shows the mode that
+  produced it, and the settings panel switches it. Unknown or missing modes fall
+  back to `standard`; no mode collapses into `safe`.
 - The Chinese UI reads 深度预测 instead of `ACE` on the dock card, buttons, and
   settings; the English UI is unchanged.
 - Development docs show the macOS/Linux shell form and keep the Windows one.
