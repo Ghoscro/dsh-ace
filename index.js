@@ -11,7 +11,7 @@
  */
 
 import { execFile } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 /** Public plugin name used by Cordis. */
@@ -191,6 +191,8 @@ export function normalizeConfig(config = {}) {
     expertMaxTokens: clampInt(source.expertMaxTokens, 1000, 8000, 6000),
     expertSituationMaxTokens: clampInt(source.expertSituationMaxTokens, 300, 1600, 800),
     expertMinScore: clampNumber(source.expertMinScore, 0, 12, 5),
+    captureSamples: source.captureSamples !== false,
+    sampleLimit: clampInt(source.sampleLimit, 10, 200, 50),
     // USD per 1M tokens; override in the plugin config when the route changes.
     pricing: {
       cacheHit: clampNumber(source?.pricing?.cacheHit, 0, 1000, 0.028),
@@ -991,6 +993,81 @@ export function usageCost(usage, pricing) {
 }
 
 /**
+ * Keep the last N expert predictions locally so the score threshold can be
+ * swept offline instead of experimented on in live chats. Content stays in the
+ * local diagnostics directory; set `captureSamples: false` to turn it off.
+ * @param {{ sessionId?: string, style?: string, mode?: string, locale?: string,
+ *   count?: number, threshold?: number, shown?: boolean, bestIndex?: number|null,
+ *   promptChars?: number, rawText?: string, moves?: object[] }} sample - one prediction.
+ * @param {{ limit?: number }} [options] - ring size.
+ */
+export function captureSample(sample, options = {}) {
+  try {
+    const home = process.env.DSH_HOME
+    if (!home) return
+    const directory = join(home, 'diagnostics')
+    mkdirSync(directory, { recursive: true })
+    const file = join(directory, 'dsh-ace-samples.jsonl')
+    const limit = clampInt(options.limit, 10, 200, 50)
+    const row = {
+      at: new Date().toISOString(),
+      sessionId: typeof sample.sessionId === 'string' ? sample.sessionId.slice(0, 200) : 'anonymous',
+      style: sample.style ?? '',
+      mode: sample.mode ?? '',
+      locale: sample.locale ?? '',
+      count: sample.count ?? 0,
+      threshold: sample.threshold ?? 0,
+      shown: sample.shown === true,
+      bestIndex: Number.isInteger(sample.bestIndex) ? sample.bestIndex : null,
+      promptChars: sample.promptChars ?? 0,
+      lastUser: clip(sample.lastUser ?? '', 300),
+      rawText: clip(sample.rawText ?? '', 16_000),
+      moves: Array.isArray(sample.moves) ? sample.moves.slice(0, 5).map(move => ({
+        text: clip(move?.text ?? '', 800),
+        why: clip(move?.why ?? '', 400),
+        risk: clip(move?.risk ?? '', 300),
+        evidence: clip(move?.evidence ?? '', 300),
+        action: move?.action ?? '',
+        value: Number(move?.value) || 0,
+        novelty: Number(move?.novelty) || 0,
+        worth_extra_step: Number(move?.worth_extra_step) || 0,
+        slot: move?.slot ?? '',
+      })) : [],
+    }
+    appendFileSync(file, JSON.stringify(row) + '\n', 'utf8')
+    const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean)
+    if (lines.length > limit) writeFileSync(file, lines.slice(-limit).join('\n') + '\n', 'utf8')
+  } catch {
+    // Sampling must never break a prediction.
+  }
+}
+
+/**
+ * Re-score stored samples at different thresholds without any model call.
+ * @param {object[]} samples - captured prediction rows.
+ * @param {number[]} thresholds - score thresholds to compare.
+ * @returns {{threshold: number, cards: number, gained: number, silent: number}[]} per-threshold counts.
+ */
+export function sweepThresholds(samples, thresholds) {
+  const rows = Array.isArray(samples) ? samples : []
+  const baseline = rows.filter(row => row.shown === true).length
+  const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+  return (Array.isArray(thresholds) ? thresholds : []).map(threshold => {
+    let cards = 0
+    for (const row of rows) {
+      const moves = Array.isArray(row.moves) ? row.moves : []
+      if (moves.length === 0) continue
+      const best = selectBestMove({ moves, bestIndex: Number.isInteger(row.bestIndex) ? row.bestIndex : null, comparison: '' }, threshold)
+      if (!best) continue
+      if (best.text.trim() === '') continue
+      if (normalize(best.text) === normalize(row.lastUser ?? '')) continue
+      cards += 1
+    }
+    return { threshold, cards, gained: cards - baseline, silent: rows.length - cards }
+  })
+}
+
+/**
  * Append one usage row: numbers only, so cache hits are visible without content.
  * @param {{ status?: string, mode?: string, style?: string, promptChars?: number, usage?: object }} event - usage fields.
  */
@@ -1335,6 +1412,22 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   const lastUser = [...input.transcript].reverse().find(row => row.role === 'user')?.text ?? ''
   const usable = best && normalize(best.text) !== normalize(lastUser) && best.text.trim() !== ''
   const candidates = usable ? [best] : []
+  if (config.captureSamples) {
+    captureSample({
+      sessionId: input.sessionId,
+      style: mode,
+      mode: 'expert',
+      locale: input.locale,
+      count: input.count,
+      threshold: config.expertMinScore,
+      shown: candidates.length > 0,
+      bestIndex: selection.bestIndex,
+      promptChars: (movesPrompt.system ?? '').length + (movesPrompt.user ?? '').length,
+      lastUser,
+      rawText: result.text,
+      moves: selection.moves,
+    }, { limit: config.sampleLimit })
+  }
   return {
     mode: 'expert',
     style: mode,
@@ -1486,7 +1579,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
   const onClose = () => controller.abort(new Error('request closed'))
   req.on('close', onClose)
   try {
-    const result = await generatePrediction(ctx, config, { transcript, cwd, count, locale, mode, style }, controller.signal)
+    const result = await generatePrediction(ctx, config, { transcript, cwd, count, locale, mode, style, sessionId }, controller.signal)
     logUsage({ sessionId, status: 'ok', mode: result.mode ?? mode, style: result.style ?? style, promptChars: result.promptChars, usage: result.usage, pricing: config.pricing })
     if (Array.isArray(result.candidates) && result.candidates.length === 0) {
       logPredictionEvent({ status: 'no-card', sessionId, mode: result.mode ?? mode, style: result.style ?? style })

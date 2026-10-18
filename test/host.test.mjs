@@ -8,7 +8,7 @@ import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
-  findBannedPhrase, cleanBannedPhrases, logUsage, normalizeUsage, transcriptWindow, usageCost,
+  captureSample, findBannedPhrase, cleanBannedPhrases, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
   ACE_MODES,
 } from '../index.js'
 
@@ -825,4 +825,40 @@ test('a silent turn is recorded so the quiet rate can be measured', async () => 
   const rows = readFileSync(join(dir, 'diagnostics', 'dsh-ace-errors.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
   assert.equal(rows.at(-1).status, 'no-card')
   assert.equal(rows.at(-1).style, 'standard')
+})
+
+test('capture keeps the last samples and stores what a sweep needs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ace-capture-'))
+  process.env.DSH_HOME = dir
+  for (let index = 0; index < 23; index += 1) {
+    captureSample({
+      sessionId: `s${index}`, style: 'wild', mode: 'expert', locale: 'zh-CN', count: 4,
+      threshold: 5, shown: false, bestIndex: 0, promptChars: 1000,
+      rawText: 'x'.repeat(20000),
+      moves: [{ text: `move ${index}`, why: 'because', value: 6, novelty: 6, worth_extra_step: 6, action: 'advance' }],
+    }, { limit: 10 })
+  }
+  const rows = readFileSync(join(dir, 'diagnostics', 'dsh-ace-samples.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(rows.length, 10, 'the ring keeps the last ten')
+  assert.equal(rows.at(-1).moves[0].text, 'move 22')
+  assert.ok(rows.at(-1).rawText.length <= 16001, 'raw text is bounded (one ellipsis allowed)')
+  assert.equal(rows.at(-1).shown, false)
+})
+
+test('the threshold sweep counts cards without calling the model', () => {
+  const strong = { text: 'a', why: 'w', value: 9, novelty: 9, worth_extra_step: 9, action: 'advance' }
+  const weak = { text: 'b', why: 'w', value: 2, novelty: 1, worth_extra_step: 2, action: 'verify' }
+  const samples = [
+    { shown: true, bestIndex: 0, moves: [strong] },
+    { shown: false, bestIndex: 0, moves: [weak] },
+    { shown: false, bestIndex: null, moves: [weak] },
+    { shown: false, bestIndex: null, moves: [] },
+  ]
+  const rows = sweepThresholds(samples, [0, 5, 10])
+  assert.deepEqual(rows.map(row => row.threshold), [0, 5, 10])
+  assert.ok(rows[0].cards >= rows[1].cards, 'a lower threshold never shows fewer cards')
+  assert.ok(rows[1].cards >= rows[2].cards, 'a higher threshold never shows more')
+  assert.equal(rows[0].cards, 3, 'the empty move list never counts')
+  assert.equal(rows[0].gained, 2)
+  assert.equal(rows[0].silent, 1)
 })

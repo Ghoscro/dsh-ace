@@ -24,7 +24,8 @@
     "SECURITY.md",
     "docs/cases.md",
     "docs/demo.svg",
-    "docs/product-plan.md"
+    "docs/product-plan.md",
+    "scripts/threshold-sweep.mjs"
   ],
   "keywords": [
     "dsh-plugin",
@@ -61,7 +62,8 @@
     }
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "sweep": "node scripts/threshold-sweep.mjs"
   },
   "devDependencies": {
     "jsdom": "^26.0.0",

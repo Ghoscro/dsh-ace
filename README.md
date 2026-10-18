@@ -99,7 +99,8 @@ The parser scans balanced JSON objects and skips a truncated or malformed line w
 - **Automatic ACE:** one ACE suggestion after each completed turn. You can turn it off in the ACE settings.
 - **Pause:** stops automatic suggestions; `✦ ACE` still works on demand.
 - **Model:** uses the active DSH agent default, or the plugin’s configured route.
-- **Privacy:** the recent transcript and the local evidence pack go to the selected model. Nothing is written to the session, and there is no cross-session learning.
+- **Privacy:** the recent transcript and the local evidence pack go to the selected model. Nothing is written to the session, and there is no cross-session learning. With `captureSamples: false` nothing is kept locally either.
+- **Samples:** the last 50 expert predictions (candidate moves, the raw answer, the last user line) stay in `diagnostics/dsh-ace-samples.jsonl`; `npm run sweep` re-scores them offline at every threshold, with no model calls.
 - **Accounting:** every prediction appends one row to `diagnostics/dsh-ace-usage.jsonl` with the session, turn index, token counts, cache hits and a priced cost using the configurable `pricing` block.
 - **Cost:** one model call per ACE suggestion. A token table with fast/expert and short/long contexts will be published before the first public release. Automatic ACE is the expensive mode; pause it if you only want it on demand.
 
