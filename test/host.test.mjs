@@ -657,3 +657,18 @@ test('review fixes: why and risk are cleaned too, not only the card text', async
   assert.equal(findBannedPhrase(card.risk ?? ''), '')
   assert.match(card.why, /缩小范围/)
 })
+
+test('the banned-word rewrite gets the full output budget instead of a tight 900', async () => {
+  const banned = JSON.stringify({
+    text: '建议先跑单测', why: '先确认范围', evidence: '', risk: '', action: 'advance',
+    value: 8, novelty: 6, worth_extra_step: 8, over_obvious: '比直接跑全量更省时间',
+  })
+  const seen = []
+  const ctx = { get: () => undefined, llm: llmCapturing(banned + '\n' + '先跑单测再说', seen) }
+  await generateExpertPrediction(ctx, normalizeConfig(), {
+    transcript: [{ role: 'user', text: '帮我修测试' }, { role: 'assistant', text: '要跑全量吗？' }],
+    count: 4, cwd: '', locale: 'zh-CN', style: 'standard',
+  }, new AbortController().signal)
+  assert.equal(seen[0].maxTokens, 4000)
+  assert.equal(seen[1].maxTokens, 6000)
+})

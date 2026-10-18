@@ -1103,10 +1103,12 @@ async function rewriteWithoutBanned(ctx, route, config, input, text, signal) {
     user: `[禁用词]\n建议、首先、综上、可以考虑\n\n[作者原话]\n${samples}\n\n[要改的句子]\n${text}\n\n[输出]\n只输出一句改好的话。`,
   }
   const result = await callExpertStage(
-    ctx, route, prompt, config, Math.min(20_000, config.expertMovesTimeoutMs), 900, signal,
+    ctx, route, prompt, config, Math.min(20_000, config.expertMovesTimeoutMs), Math.min(6000, config.expertMaxTokens), signal,
   )
   const cleaned = String(result.text ?? '').trim().replace(/^["'“”]+|["'“”]+$/g, '').trim()
-  return cleaned.length < 6 ? '' : cleaned
+  if (cleaned.length < 6) return ''
+  // One rewritten sentence should not become a new wall of text.
+  return cleaned.length > 1200 ? cleaned.slice(0, 1200) : cleaned
 }
 
 export async function generateExpertPrediction(ctx, config, input, signal) {
