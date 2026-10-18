@@ -1488,6 +1488,9 @@ export async function handleRequest(ctx, config, inflight, req, res) {
   try {
     const result = await generatePrediction(ctx, config, { transcript, cwd, count, locale, mode, style }, controller.signal)
     logUsage({ sessionId, status: 'ok', mode: result.mode ?? mode, style: result.style ?? style, promptChars: result.promptChars, usage: result.usage, pricing: config.pricing })
+    if (Array.isArray(result.candidates) && result.candidates.length === 0) {
+      logPredictionEvent({ status: 'no-card', sessionId, mode: result.mode ?? mode, style: result.style ?? style })
+    }
     if (result.warning) {
       logPredictionEvent({ status: 'fallback', sessionId, mode: result.mode ?? mode, style: result.style ?? style, warning: String(result.warning).slice(0, 300) })
     }

@@ -810,3 +810,19 @@ test('a restart picks the turn index back up from the usage file', () => {
   assert.equal(rows.at(-1).turnIndex, 8)
   assert.ok(rows.at(-1).sessionCost > 0.5)
 })
+
+test('a silent turn is recorded so the quiet rate can be measured', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ace-nocard-'))
+  process.env.DSH_HOME = dir
+  const silent = JSON.stringify({ best_index: null, comparison: '没有更好的下一步' })
+  const ctx = { get: () => undefined, llm: llmSequence([silent]) }
+  const out = response()
+  await handleRequest(ctx, normalizeConfig(), new Map(), request({
+    sessionId: 's-quiet', count: 4, locale: 'zh-CN', cwd: '', mode: 'expert', style: 'standard',
+    transcript: [{ role: 'user', text: '继续' }, { role: 'assistant', text: '好了' }],
+  }), out)
+  assert.equal(JSON.parse(out.body).value.candidates.length, 0)
+  const rows = readFileSync(join(dir, 'diagnostics', 'dsh-ace-errors.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(rows.at(-1).status, 'no-card')
+  assert.equal(rows.at(-1).style, 'standard')
+})

@@ -11,7 +11,7 @@ const clampMode = value => (MODES.includes(value) ? value : 'standard')
 
 const zh = {
   title: '深度预测', loading: '正在预测下一句…', refresh: '重新推演', close: '关闭深度预测',
-  empty: '这轮没有比顺手继续更好的深度预测', error: '深度预测失败', retry: '重试', inserted: '深度预测建议已填入',
+  error: '深度预测失败', retry: '重试', inserted: '深度预测建议已填入',
   undo: '撤销', settings: '深度预测设置', auto: '自动生成深度预测', pause: '暂停深度预测',
   count: '候选数量', privacy: '深度预测会把最近几轮对话发给当前模型；不写入会话记录，不跨会话学习。',
   button: '深度预测', buttonTitle: '生成一条深度预测（Tab 采用）',
@@ -24,7 +24,7 @@ const zh = {
 }
 const en = {
   title: 'ACE Move', loading: 'ACE is predicting your next move…', refresh: 'Think again',
-  close: 'Dismiss ACE', empty: 'No ACE Move beats the obvious next line this time', error: 'ACE failed',
+  close: 'Dismiss ACE', error: 'ACE failed',
   retry: 'Retry', inserted: 'ACE Move inserted', undo: 'Undo', settings: 'ACE settings',
   auto: 'Generate ACE automatically', pause: 'Pause ACE', count: 'Candidates',
   privacy: 'ACE sends the recent turns to the current model. Nothing is written to the session and nothing is learned across sessions.',
@@ -615,9 +615,6 @@ function apply(ctx) {
         `${state.salvaged ? t('salvaged') : t('fallback')}：${state.warning}`)
       : null,
     rows,
-    state.status === 'idle' && state.candidates.length === 0 && state.accepted === null
-      ? React.createElement('div', { className: 'dcp-loading' }, t('empty'))
-      : null,
     state.accepted !== null
       ? React.createElement('div', { className: 'dcp-undo' },
         React.createElement('span', null, t('inserted')),

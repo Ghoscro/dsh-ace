@@ -4,6 +4,8 @@
 
 - The fourth mode is named 王牌预测 in the Chinese UI and ACE in the English
   UI; the internal id stays `wild` so saved settings keep working.
+- No placeholder sentence when there is no move: a quiet card is now actually
+  quiet. Silent turns are logged as `no-card` so the quiet rate is measurable.
 - Usage rows also carry `sessionId`, `turnIndex`, `sessionTurns` and the
   session's running `sessionCost`, so a multi-day curve can be plotted; the
   counters rebuild from the file after a restart.

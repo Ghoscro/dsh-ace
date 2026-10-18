@@ -128,6 +128,9 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
     root.render(React.createElement(Dock, props))
   })
 
+  // A quiet card stays quiet: no placeholder sentence before or after a turn.
+  assert.equal(container.textContent.includes('empty'), false)
+
   // A new assistant turn completes after the dock mounted.
   await act(async () => {
     entries.push(event('turn/end', 9, { turn: 2, reason: { kind: 'completed' } }))
