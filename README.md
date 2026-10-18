@@ -95,6 +95,7 @@ The parser scans balanced JSON objects and skips a truncated or malformed line w
 ## Settings and cost
 
 - **Modes:** `safe`, `standard`, `brainstorm`, `wild` are equal-status modes, not a volume dial. Each changes the prompt policy and the output budget, the card shows which mode produced it, and the settings panel switches it. No mode collapses into `safe`.
+- **Cache:** the rules and the voice samples form a byte-identical head, the conversation is appended instead of re-windowed every turn, and only the volatile tail (mode, situation, evidence) changes, so the provider's automatic prefix cache can hit on most of the prompt.
 - **Automatic ACE:** one ACE suggestion after each completed turn. You can turn it off in the ACE settings.
 - **Pause:** stops automatic suggestions; `✦ ACE` still works on demand.
 - **Model:** uses the active DSH agent default, or the plugin’s configured route.

@@ -1,11 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
-  findBannedPhrase, cleanBannedPhrases,
+  findBannedPhrase, cleanBannedPhrases, logUsage, transcriptWindow,
   ACE_MODES,
 } from '../index.js'
 
@@ -505,12 +508,16 @@ test('a truncated JSON answer is salvaged and a short garbage answer is not', as
   assert.equal(fallback.mode, 'fast-fallback')
 })
 
-test('the output contract is restated last so a long mode prompt cannot bury it', () => {
+test('the output contract sits before the transcript so a long prompt cannot bury it', () => {
   const input = { transcript: [{ role: 'user', text: '随便' }], count: 4, locale: 'zh-CN', mode: 'wild' }
   for (const prompt of [buildExpertPrompt(input), buildSingleMovePrompt(input)]) {
-    const tail = prompt.user.slice(-600)
-    assert.match(tail, /\[FORMAT - binding\]/)
-    assert.match(tail, /closing brace/)
+    const format = prompt.user.indexOf('[FORMAT - binding]')
+    const thread = prompt.user.indexOf('[THREAD]\n')
+    assert.ok(format >= 0 && format < thread, 'format block precedes the transcript')
+    assert.match(prompt.user.slice(format, thread), /closing brace/)
+    const out = prompt.user.lastIndexOf('[OUT]')
+    assert.ok(out > prompt.user.indexOf('[SITUATION]'), 'the volatile tail ends with [OUT]')
+    assert.equal(prompt.user.trimEnd().endsWith('language=zh') || prompt.user.trimEnd().endsWith('N=1'), true)
   }
 })
 
@@ -671,4 +678,73 @@ test('the banned-word rewrite gets the full output budget instead of a tight 900
   }, new AbortController().signal)
   assert.equal(seen[0].maxTokens, 4000)
   assert.equal(seen[1].maxTokens, 6000)
+})
+
+test('consecutive turns share a byte-identical prefix so the provider cache can hit', () => {
+  const history = [
+    { role: 'user', text: '我想做个怪东西' },
+    { role: 'assistant', text: '说说看，你想怪到什么程度' },
+    { role: 'user', text: '越怪越好，别给我做安全牌' },
+  ]
+  const build = transcript => buildExpertPrompt({
+    transcript, count: 4, locale: 'zh-CN', mode: 'wild', situation: { goal: 'x' }, evidence: 'git status: clean',
+  }).user
+  const first = build(history)
+  const second = build([...history, { role: 'assistant', text: '那我给你三版' }, { role: 'user', text: '继续' }])
+  // Everything up to the transcript's end is the cached prefix: head plus the
+  // conversation so far. Only the volatile tail after it is recomputed.
+  const cached = first.slice(0, first.indexOf('\n\n[MODE]'))
+  assert.ok(cached.length > first.length * 0.7, `cached prefix should dominate, got ${cached.length}/${first.length}`)
+  assert.equal(second.startsWith(cached), true, 'the next turn must extend the same prefix')
+  assert.ok(second.indexOf('\n\n[MODE]') > cached.length, 'the volatile tail moved later, not earlier')
+})
+
+test('the transcript window trims in blocks so the prefix survives several turns', () => {
+  const rows = Array.from({ length: 25 }, (_, index) => ({
+    role: index % 2 === 0 ? 'user' : 'assistant', text: `第 ${index} 条`,
+  }))
+  const windowed = transcriptWindow(rows)
+  assert.equal(windowed.length, 17)
+  assert.equal(windowed[0].text, '第 8 条')
+  const sameTurn = transcriptWindow(rows.slice(0, 24))
+  assert.equal(sameTurn.length, 24, 'under the cap the window does not move')
+  assert.deepEqual(transcriptWindow(rows.slice(0, 24)).slice(0, 16), sameTurn.slice(0, 16))
+})
+
+test('usage rows record numbers only, never prompt text', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ace-usage-'))
+  process.env.DSH_HOME = dir
+  logUsage({
+    status: 'ok', mode: 'expert', style: 'wild', promptChars: 1234,
+    usage: { prompt_tokens: 900, completion_tokens: 40, prompt_cache_hit_tokens: 800, note: 'should be dropped' },
+  })
+  const rows = readFileSync(join(dir, 'diagnostics', 'dsh-ace-usage.jsonl'), 'utf8').trim().split('\n')
+  const row = JSON.parse(rows[0])
+  assert.equal(row.style, 'wild')
+  assert.equal(row.promptChars, 1234)
+  assert.equal(row.usage.prompt_cache_hit_tokens, 800)
+  assert.equal('note' in row.usage, false)
+  assert.equal(JSON.stringify(row).includes('第'), false)
+})
+
+test('the transcript window also respects a character budget', () => {
+  const rows = Array.from({ length: 12 }, (_, index) => ({
+    role: index % 2 === 0 ? 'user' : 'assistant', text: 'x'.repeat(1500) + index,
+  }))
+  const windowed = transcriptWindow(rows)
+  const rendered = windowed.reduce((sum, row) => sum + Math.min(row.text.length, row.role === 'assistant' ? 1000 : 500), 0)
+  assert.ok(rendered <= 8000, `window should stay under the budget, got ${rendered}`)
+  assert.ok(windowed.length >= 6, 'never trims below the minimum')
+  assert.ok(windowed.length < rows.length, 'it actually trims')
+})
+
+test('two different sessions share the static head, so the cache can hit across sessions', () => {
+  const headOf = transcript => {
+    const prompt = buildExpertPrompt({ transcript, count: 4, locale: 'zh-CN', mode: 'wild' }).user
+    return prompt.slice(0, prompt.indexOf('[THREAD]\n'))
+  }
+  const first = headOf([{ role: 'user', text: '我想做个怪东西' }])
+  const second = headOf([{ role: 'user', text: '帮我查一下这个报错' }])
+  assert.equal(first, second)
+  assert.ok(first.length > 900, `shared head should be worth caching, got ${first.length}`)
 })

@@ -498,7 +498,7 @@ const VOICE_ZH = `[VOICE - 先像他，再疯]
 <sample>
 ${VOICE_SAMPLES_ZH}
 </sample>
-- 用他 [STYLE] 里的词和句子长度。他口语就口语，他粗糙就粗糙；不要替他加礼貌、加总结。
+- 用他在 [THREAD] 里的词和句子长度。他口语就口语，他粗糙就粗糙；不要替他加礼貌、加总结。
 - text 里不要小标题、不要项目符号、不要书面连接词。
 - 疯批也要用他的口吻疯：他爱短句就用短句，他爱絮叨就絮叨。想法可以离谱，语气必须是他。`
 
@@ -507,7 +507,7 @@ The sample below is the user's own writing. Copy its register, not its content; 
 <sample>
 ${VOICE_SAMPLES_ZH}
 </sample>
-- Reuse the vocabulary, sentence length and punctuation habits visible in [STYLE]. If they talk loosely, stay loose; do not add politeness or summaries they would not write.
+- Reuse the vocabulary, sentence length and punctuation habits visible in [THREAD]. If they talk loosely, stay loose; do not add politeness or summaries they would not write.
 - No headings, bullets or written-connective phrasing inside text.
 - Even a wild idea keeps their voice: short sentences stay short, rambling stays rambling. The idea can be extreme; the voice must be theirs.`
 
@@ -601,6 +601,37 @@ export function salvageExpertText(text) {
   }
 }
 
+/** Keep the transcript append-only for as long as possible: provider prefix
+ * caching only pays off when the bytes before the volatile tail stay identical.
+ * Trim in blocks so a sliding window does not invalidate the cache every turn. */
+export const TRANSCRIPT_MAX_MESSAGES = 24
+export const TRANSCRIPT_TRIM_BLOCK = 8
+export const TRANSCRIPT_MAX_CHARS = 8000
+export const TRANSCRIPT_MIN_MESSAGES = 6
+
+/**
+ * Select the transcript window: trim in blocks so the cached prefix survives
+ * several turns, then enforce a character budget from the front.
+ * @param {object[]} transcript - conversation rows.
+ * @returns {object[]} stable window.
+ */
+export function transcriptWindow(transcript) {
+  const rows = Array.isArray(transcript) ? transcript : []
+  let start = 0
+  if (rows.length > TRANSCRIPT_MAX_MESSAGES) {
+    const over = rows.length - TRANSCRIPT_MAX_MESSAGES
+    start = Math.ceil(over / TRANSCRIPT_TRIM_BLOCK) * TRANSCRIPT_TRIM_BLOCK
+  }
+  // Measure what actually gets rendered, not the raw message.
+  const size = row => Math.min(String(row?.text ?? '').length, row?.role === 'assistant' ? 1000 : 500)
+  let total = rows.slice(start).reduce((sum, row) => sum + size(row), 0)
+  while (total > TRANSCRIPT_MAX_CHARS && rows.length - start > TRANSCRIPT_MIN_MESSAGES) {
+    total -= size(rows[start])
+    start += 1
+  }
+  return rows.slice(start)
+}
+
 /**
  * Build the expert next-move prompt from the deterministic situation and evidence.
  * @param {{ situation: object, transcript: Array<object>, evidence?: string, count: number, locale?: string }} input - prompt inputs.
@@ -611,18 +642,12 @@ export function buildExpertPrompt(input) {
   const count = clampInt(input.count, 3, 5, 4)
   const locale = typeof input.locale === 'string' ? input.locale.toLowerCase() : 'zh'
   const mode = resolveMode(input.mode)
-  const style = transcript
-    .filter(row => row.role === 'user')
-    .slice(-8)
-    .map(row => `- ${clip(row.text, 300)}`)
-    .join('\n') || '(none)'
-  const thread = transcript
-    .slice(-10)
+  const thread = transcriptWindow(transcript)
     .map(row => `${row.role}: ${clip(row.text, row.role === 'assistant' ? 1000 : 500)}`)
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `[MODE]\n${MODE_POLICY[mode]}\n\n${MODE_DISCIPLINE}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -636,13 +661,7 @@ export function buildExpertPrompt(input) {
 export function buildSingleMovePrompt(input) {
   const transcript = Array.isArray(input.transcript) ? input.transcript : []
   const locale = typeof input.locale === 'string' ? input.locale.toLowerCase() : 'zh'
-  const style = transcript
-    .filter(row => row.role === 'user')
-    .slice(-6)
-    .map(row => `- ${clip(row.text, 240)}`)
-    .join('\n') || '(none)'
-  const thread = transcript
-    .slice(-8)
+  const thread = transcriptWindow(transcript)
     .map(row => `${row.role}: ${clip(row.text, row.role === 'assistant' ? 800 : 400)}`)
     .join('\n') || '(none)'
   const system = locale.startsWith('zh')
@@ -654,7 +673,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=1`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
   }
 }
 
@@ -914,6 +933,34 @@ function sendJson(res, status, body) {
     'cache-control': 'no-store',
   })
   res.end(JSON.stringify(body))
+}
+
+/**
+ * Append one usage row: numbers only, so cache hits are visible without content.
+ * @param {{ status?: string, mode?: string, style?: string, promptChars?: number, usage?: object }} event - usage fields.
+ */
+export function logUsage(event) {
+  try {
+    const home = process.env.DSH_HOME
+    if (!home) return
+    const directory = join(home, 'diagnostics')
+    mkdirSync(directory, { recursive: true })
+    const usage = event.usage && typeof event.usage === 'object' ? event.usage : {}
+    const numeric = {}
+    for (const [key, value] of Object.entries(usage)) {
+      if (typeof value === 'number' && Number.isFinite(value)) numeric[key] = value
+    }
+    appendFileSync(join(directory, 'dsh-ace-usage.jsonl'), JSON.stringify({
+      at: new Date().toISOString(),
+      status: event.status ?? '',
+      mode: event.mode ?? '',
+      style: event.style ?? '',
+      promptChars: typeof event.promptChars === 'number' ? event.promptChars : 0,
+      usage: numeric,
+    }) + '\n', 'utf8')
+  } catch {
+    // Usage logging must never break a prediction.
+  }
 }
 
 /**
@@ -1185,6 +1232,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     model: `${route.provider}/${route.model}`,
     evidenceUsed: evidence !== '(none)' && evidence !== '(not a git repository or no changes)',
     usage: result.usage,
+    promptChars: (movesPrompt.system ?? '').length + (movesPrompt.user ?? '').length,
   }
 }
 
@@ -1329,6 +1377,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
   req.on('close', onClose)
   try {
     const result = await generatePrediction(ctx, config, { transcript, cwd, count, locale, mode, style }, controller.signal)
+    logUsage({ status: 'ok', mode: result.mode ?? mode, style: result.style ?? style, promptChars: result.promptChars, usage: result.usage })
     if (result.warning) {
       logPredictionEvent({ status: 'fallback', sessionId, mode: result.mode ?? mode, style: result.style ?? style, warning: String(result.warning).slice(0, 300) })
     }

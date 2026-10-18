@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The expert prompt is ordered for provider prefix caching: identical head,
+  append-only transcript trimmed in blocks (with an 8k-character budget), mode
+  and evidence moved to the volatile tail. Each prediction also writes one
+  numbers-only usage row to `diagnostics/dsh-ace-usage.jsonl`.
 - The banned-word rule covers the whole card (text, why, risk); a field that
   cleans down to nothing drops the move instead of showing an empty card.
 - The voice sample is the owner's own messages, pasted verbatim, instead of
