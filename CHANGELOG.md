@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-19
 
 - The fourth mode is named 王牌预测 in the Chinese UI and ACE in the English
   UI; the internal id stays `wild` so saved settings keep working.

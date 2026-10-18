@@ -12,6 +12,9 @@ import {
   ACE_MODES,
 } from '../index.js'
 
+// Never write diagnostics into the owner's real DSH home while testing.
+process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'ace-test-home-'))
+
 test('normalizeConfig bounds every numeric field and keeps the route local', () => {
   const cfg = normalizeConfig({
     count: 99, maxTokens: 1, temperature: 9, timeoutMs: 1, maxAttempts: 5,

@@ -11,7 +11,22 @@
 
 ![ACE Move 示例](docs/demo.svg)
 
-> 这是 ACE Move 的示例：它说明这条比“顺手继续”多得到什么，而不是把自动补全写长。
+> 这是渲染示例，不是录屏。首次发布前会换成真实录屏。
+
+**一句话差别：** 补全猜你会打什么，ACE 猜下一句值不值得发；赢不过顺手继续就不出卡。
+
+## 安装
+
+npm 上 `dsh-ace` 已被无关项目占用，包名是 `@ghoscro/dsh-ace`。在正式发 npm 之前，[Releases](https://github.com/Ghoscro/dsh-ace/releases) 里的 tarball 就是安装路径：
+
+```bash
+# 在 DSH profile 目录里
+pnpm add file:/绝对路径/ghoscro-dsh-ace-0.2.0.tgz
+```
+
+然后把 `"@ghoscro/dsh-ace"` 加进 `dsh.profile.bundles`，在 profile 里 materialize（DSH 插件页或 `pnpm install`），重启 DSH。composer 工具行会出现 **✦ 深度预测**。
+
+开发者安装（把本目录拷进 `sakura/packages/`）放在 [INSTALL.md](INSTALL.md) 末尾。已验证宿主：**DSH 0.2.1-rc.2**，其他版本未验证。
 
 ## 它做什么
 
@@ -37,23 +52,13 @@
 
 ## 快速开始
 
-**状态：** 本地包/源码安装。npm 上 `dsh-ace` 已被无关项目占用；使用 scope 包 `@ghoscro/dsh-ace`。npm 发布等待凭据。
+1. 按上面的安装方式装好，重启 DSH。
+2. 打开对话，工具行出现 **✦ 深度预测**；点它，或等下一轮完成（如果开了自动 ACE）。
+3. 在卡片上按 `Tab` 填入草稿。
 
-已验证宿主：**DSH 0.2.1-rc.2**。其他版本可能可用，但尚未验证。
+从 `dsh-composer-predict` 迁移，先读 [MIGRATION.md](MIGRATION.md)，不要同时加载两个包。
 
-1. 把包放到 `<profile>/sakura/packages/dsh-ace`。
-2. 在 profile 的 `package.json` 依赖中加入：
-
-   ```json
-   "@ghoscro/dsh-ace": "file:./sakura/packages/dsh-ace"
-   ```
-
-3. 把 `"@ghoscro/dsh-ace"` 加入 `dsh.profile.bundles`。
-4. 在 profile 里 materialize（`pnpm install` 或 DSH 插件页），重启 DSH。
-5. 打开对话，composer 工具行出现 **✦ 深度预测**。点击它，或等下一轮完成（如果开了自动 ACE）。
-6. 在卡片上按 `Tab` 填入草稿。
-
-从 `dsh-composer-predict` 迁移，先读 [MIGRATION.md](MIGRATION.md)。不要同时加载两个包。
+**没有卡不是坏了。** 那说明这一轮没有哪条比顺手"继续"更值得发。静默轮记为 `no-card`，分数线用 `npm run sweep` 离线扫，别拿线上真聊试。
 
 ## 三个案例
 
@@ -103,7 +108,7 @@
 - **账本：** 每个会话留一份只追加的记录，prompt 从这份记录重建，前缀只会变长；超过 `ledgerMaxEntries` 时最旧的部分写到归档文件，并用确定性摘要顶上。`ledger: false` 关掉。
 - **样本：** 最近 50 次深度预测的候选、原始回答和最后一条用户消息留在 `diagnostics/dsh-ace-samples.jsonl`；`npm run sweep` 离线按各档分数线重算，不调用模型。
 - **记账：** 每次预测往 `diagnostics/dsh-ace-usage.jsonl` 追加一行，带会话、轮次、token、缓存命中和按 `pricing` 折算的钱。
-- **成本：** 每次 ACE 建议一次模型调用。发布前会补 fast/expert × 短/长上下文的真实 token 表；自动 ACE 是较贵的模式，只想按需使用时可以暂停。
+- **成本：** 每次 ACE 建议一次模型调用。按默认单价和实测 2.4–3.0k 字符的 prompt，一次大约 **$0.0003–0.001**；前缀缓存命中能把输入部分压到约十分之一。各模式输出上限：保守 2200、常规 4000、脑暴 5600、王牌 6000 tokens。发布前会补 fast/expert × 短/长上下文的真实 token 表；自动 ACE 是较贵的模式，只想按需使用时可以暂停。
 
 ## 开发
 

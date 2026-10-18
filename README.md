@@ -11,7 +11,22 @@ An AI next-move advisor for **DeepSeek Harness**. It reads the recent conversati
 
 ![ACE Move example](docs/demo.svg)
 
-> Example ACE Move. The card shows what it adds over the obvious next line, not just a longer autocomplete.
+> Rendered example, not a recording. A real screen capture replaces it before the first release.
+
+**The difference, in one line:** autocomplete guesses what you *would* type; ACE guesses what is *worth sending* — and shows nothing when nothing wins.
+
+## Install
+
+The npm name `dsh-ace` is taken by an unrelated project, so the package is scoped as `@ghoscro/dsh-ace`. Until it is published, the tarball on [Releases](https://github.com/Ghoscro/dsh-ace/releases) is the install path:
+
+```bash
+# in the DSH profile directory
+pnpm add file:/absolute/path/to/ghoscro-dsh-ace-0.2.0.tgz
+```
+
+Then add `"@ghoscro/dsh-ace"` to `dsh.profile.bundles`, materialize the profile (DSH plugin page or `pnpm install`), and restart DSH. The composer row shows **✦ ACE** (**✦ 深度预测** in the Chinese UI).
+
+Developer install (copy this directory into `sakura/packages/`) is at the end of [INSTALL.md](INSTALL.md). Verified host: **DSH 0.2.1-rc.2**; other versions are unverified.
 
 ## What it does
 
@@ -37,23 +52,13 @@ A real screen recording will replace the illustrative card after the first beta.
 
 ## Quick start
 
-**Status:** local package / source install. The npm name `dsh-ace` is already taken by an unrelated project; the scoped package is `@ghoscro/dsh-ace`. npm publishing is pending credentials.
-
-Verified host: **DSH 0.2.1-rc.2**. Other versions may work; they are not verified yet.
-
-1. Put the package at `<profile>/sakura/packages/dsh-ace`.
-2. Add the dependency to the profile `package.json`:
-
-   ```json
-   "@ghoscro/dsh-ace": "file:./sakura/packages/dsh-ace"
-   ```
-
-3. Add `"@ghoscro/dsh-ace"` to `dsh.profile.bundles`.
-4. Materialize it in the profile (`pnpm install` or the DSH plugin page), then restart DSH.
-5. Open a conversation. The composer toolbar shows **✦ ACE**. Click it, or wait for the next completed turn if automatic ACE is enabled.
-6. Press `Tab` on the card to fill the draft.
+1. Install as above; restart DSH.
+2. Open a conversation. The composer row shows **✦ ACE**; click it, or wait for the next completed turn if automatic ACE is on.
+3. Press `Tab` on the card to fill the draft.
 
 If you are migrating from `dsh-composer-predict`, read [MIGRATION.md](MIGRATION.md) first. Do not load both packages at once.
+
+**A missing card is not a failure.** It means nothing beat the obvious "continue" for that turn. Silent turns are logged as `no-card`, and the score threshold can be swept offline with `npm run sweep` instead of being tuned on live chats.
 
 ## Three cases
 
@@ -103,7 +108,8 @@ The parser scans balanced JSON objects and skips a truncated or malformed line w
 - **Ledger:** each session keeps an append-only record of what the predictor saw; the prompt is rebuilt from it, so the prefix only grows, and past `ledgerMaxEntries` the oldest part is written to an archive file and replaced by a deterministic digest. `ledger: false` turns it off.
 - **Samples:** the last 50 expert predictions (candidate moves, the raw answer, the last user line) stay in `diagnostics/dsh-ace-samples.jsonl`; `npm run sweep` re-scores them offline at every threshold, with no model calls.
 - **Accounting:** every prediction appends one row to `diagnostics/dsh-ace-usage.jsonl` with the session, turn index, token counts, cache hits and a priced cost using the configurable `pricing` block.
-- **Cost:** one model call per ACE suggestion. A token table with fast/expert and short/long contexts will be published before the first public release. Automatic ACE is the expensive mode; pause it if you only want it on demand.
+- **Cost:** one model call per ACE suggestion. At the default prices and a measured 2.4–3.0k-character prompt, one suggestion is roughly **$0.0003–0.001**; a prefix-cache hit cuts the input side by about 10x. The output caps are `safe` 2200, `standard` 4000, `brainstorm` 5600, `wild` 6000 tokens.
+- **What it costs you per turn:** automatic ACE is one call per completed turn; pause it and only the ✦ click costs anything. A token table with fast/expert and short/long contexts will be published before the first public release. Automatic ACE is the expensive mode; pause it if you only want it on demand.
 
 ## Development
 
