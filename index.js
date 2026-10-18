@@ -487,6 +487,25 @@ const MODE_DISCIPLINE = `CONTENT DISCIPLINE (every mode):
 - Difficulty, cost or the chance of failure is not by itself a reason to drop a direction. Only the user's explicit limits are binding.
 - A mode never collapses into safe: when you propose a tamer move, justify it as better, not as safer.`
 
+/** Voice first: the card must read like the user typed it, then go wild. */
+const VOICE_ZH = `[VOICE - 先像他，再疯]
+这段话要像用户本人会打出来的，不是顾问写的。
+- 用他 [STYLE] 里的词、句子长度和标点习惯。他口语就口语，他粗糙就粗糙；不要替他加礼貌、加总结、加"建议"。
+- text 里不要小标题、不要项目符号、不要"首先/其次/综上/希望对你有帮助"这类话。
+- 疯批也要用他的口吻疯：他爱短句就用短句，他爱絮叨就絮叨。想法可以离谱，语气必须是他。
+反例（别这样写）："建议先做玩法原型，再考虑视觉。可拆分为三层：1) 核心循环……"
+正例（这样写）："我想先拿纸把这一局画出来……算了太慢，直接让 AI 给我三版规则，我挑最疯的那版今晚找人试玩。"`
+
+const VOICE_EN = `[VOICE - sound like them first, then go wild]
+The card must read like the user typed it, not like a consultant wrote it.
+- Reuse the vocabulary, sentence length and punctuation habits visible in [STYLE]. If they talk loosely, stay loose; do not add politeness, summaries or "recommendations" they would not write.
+- No headings, bullets or "first, second, in summary" inside text.
+- Even a wild idea keeps their voice: short sentences stay short, rambling stays rambling. The idea can be extreme; the voice must be theirs.
+Bad: "I recommend prototyping the core loop first. This can be split into three parts: 1) ..."
+Good: "i want to sketch one round on paper first... no, too slow, just have the AI give me three rule sets and i'll pick the most unhinged one and get someone to play it tonight."`
+
+const voiceBlock = locale => (locale.startsWith('zh') ? VOICE_ZH : VOICE_EN)
+
 /** The output contract is restated last so a long mode prompt cannot bury it. */
 const FORMAT_BLOCK = `[FORMAT - binding]
 - Output one JSON object per line, each one complete and closed on the same line. No prose, markdown, headings or code fences outside the objects.
@@ -554,7 +573,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `[MODE]\n${MODE_POLICY[mode]}\n\n${MODE_DISCIPLINE}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `[MODE]\n${MODE_POLICY[mode]}\n\n${MODE_DISCIPLINE}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${voiceBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -586,7 +605,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=1`,
+    user: `[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${voiceBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=1`,
   }
 }
 

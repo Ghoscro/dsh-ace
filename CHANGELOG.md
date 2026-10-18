@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The card speaks in the user's own voice before it expands: vocabulary,
+  sentence length and punctuation are taken from their recent messages, and
+  headings/bullets/consultant phrasing are banned in `text`. Wild ideas still
+  sound like the user wrote them.
 - A model answer that arrives as prose or truncated JSON is salvaged into one
   card with an explicit note, instead of failing the turn and falling back to a
   fast suggestion. The output contract is now restated after the mode prompt so a

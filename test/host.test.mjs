@@ -527,3 +527,17 @@ test('handleRequest marks a salvaged card in the response', async () => {
   assert.equal(payload.value.style, 'wild')
   assert.equal(payload.value.candidates.length, 1)
 })
+
+test('the prompt asks for the user voice before any expansion, in both locales', () => {
+  const base = { transcript: [{ role: 'user', text: '我想做个怪东西' }], count: 4 }
+  const zh = buildExpertPrompt({ ...base, locale: 'zh-CN', mode: 'wild' }).user
+  const en = buildExpertPrompt({ ...base, locale: 'en-US', mode: 'wild' }).user
+  assert.match(zh, /\[VOICE - 先像他，再疯\]/)
+  assert.match(zh, /别这样写/)
+  assert.match(zh, /语气必须是他/)
+  assert.match(en, /\[VOICE - sound like them first, then go wild\]/)
+  assert.match(en, /Bad:/)
+  assert.match(en, /voice must be theirs/)
+  const retry = buildSingleMovePrompt({ ...base, locale: 'zh-CN', mode: 'wild' }).user
+  assert.match(retry, /\[VOICE/)
+})
