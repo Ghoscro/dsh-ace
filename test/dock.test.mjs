@@ -5,14 +5,11 @@ import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 
-const sourcePath = 'E:/我的文档/程序/sakurabot/projects/deepseek-harness-next/source'
-const sourceRequire = createRequire(`${sourcePath}/package.json`)
-const reactRequire = createRequire(`${sourcePath}/node_modules/.pnpm/react@18.3.1/node_modules/react/package.json`)
-const reactDomRequire = createRequire(`${sourcePath}/node_modules/.pnpm/react-dom@18.3.1_react@18.3.1/node_modules/react-dom/package.json`)
-const { JSDOM } = sourceRequire('jsdom')
-const React = reactRequire('react')
-const { createRoot } = reactDomRequire('react-dom/client')
-const { act } = reactDomRequire('react-dom/test-utils')
+const require = createRequire(import.meta.url)
+const { JSDOM } = require('jsdom')
+const React = require('react')
+const { createRoot } = require('react-dom/client')
+const { act } = require('react-dom/test-utils')
 
 const clientSource = readFileSync(fileURLToPath(new URL('../client.js', import.meta.url)), 'utf8')
 
