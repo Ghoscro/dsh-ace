@@ -23,7 +23,8 @@
     "CONTRIBUTING.md",
     "SECURITY.md",
     "docs/cases.md",
-    "docs/demo.svg"
+    "docs/demo.svg",
+    "docs/product-plan.md"
   ],
   "keywords": [
     "dsh-plugin",
