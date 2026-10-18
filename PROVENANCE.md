@@ -3,7 +3,8 @@
 This repository is a cleaned public snapshot of the private
 `dsh-composer-predict` plugin.
 
-- Source path at extraction: `E:/我的文档/程序/sakurabot/projects/dsh-composer-predict`
+- Source path at extraction: `<workspace>/projects/dsh-composer-predict` (the
+  private SakuraBot workspace; not included in this repository)
 - Source parent Git commit: `b567aed80b3bf81f7214c5ff7f1dbc297d1029d5`
 - Source working tree: had uncommitted files; the extraction takes the current
   working tree, not the parent commit contents.
