@@ -607,3 +607,53 @@ test('a failed rewrite still leaves a cleaned card instead of nothing', async ()
   assert.equal(findBannedPhrase(result.candidates[0].text), '')
   assert.match(result.candidates[0].text, /先跑单测/)
 })
+
+test('review fixes: mode input is trimmed and clause-initial cleanup leaves no dangling punctuation', () => {
+  assert.equal(resolveMode('  wild  '), 'wild')
+  assert.equal(resolveMode('WILD'), 'standard')
+  assert.equal(cleanBannedPhrases('，建议先跑一次'), '先跑一次')
+  assert.equal(cleanBannedPhrases('；首先，把重试去掉'), '把重试去掉')
+  assert.equal(cleanBannedPhrases('可以考虑，再看日志'), '可以，再看日志')
+})
+
+test('review fixes: a fast candidate that cleans down to nothing is dropped', async () => {
+  const calls = { count: 0 }
+  const ctx = { get: () => undefined, llm: llmSequence(['["建议"]', '["先跑一遍"]'], calls) }
+  const result = await generatePrediction(ctx, normalizeConfig(), {
+    transcript: [{ role: 'user', text: '继续' }], count: 2, cwd: '', locale: 'zh-CN',
+  }, new AbortController().signal)
+  assert.deepEqual(result.candidates, ['先跑一遍'])
+  assert.equal(calls.count, 2)
+})
+
+test('review fixes: an expert move that cleans down to nothing is not shown', async () => {
+  const only = JSON.stringify({
+    text: '建议', why: '', evidence: '', risk: '', action: 'advance',
+    value: 8, novelty: 6, worth_extra_step: 8, over_obvious: true,
+  })
+  const calls = { count: 0 }
+  const ctx = { get: () => undefined, llm: llmSequence([only, 'x'], calls) }
+  const result = await generateExpertPrediction(ctx, normalizeConfig(), {
+    transcript: [{ role: 'user', text: '帮我修测试' }, { role: 'assistant', text: '要跑全量吗？' }],
+    count: 4, cwd: '', locale: 'zh-CN', style: 'standard',
+  }, new AbortController().signal)
+  assert.deepEqual(result.candidates, [])
+})
+
+test('review fixes: why and risk are cleaned too, not only the card text', async () => {
+  const move = JSON.stringify({
+    text: '把重试去掉跑一次', why: '建议先缩小范围再判断', evidence: 'x.test.ts', risk: '首先可能会暴露更多失败',
+    action: 'verify', value: 8, novelty: 6, worth_extra_step: 8, over_obvious: true,
+  })
+  const ctx = { get: () => undefined, llm: llmSequence([move]) }
+  const result = await generateExpertPrediction(ctx, normalizeConfig(), {
+    transcript: [{ role: 'user', text: '帮我修测试' }, { role: 'assistant', text: '要跑全量吗？' }],
+    count: 4, cwd: '', locale: 'zh-CN', style: 'standard',
+  }, new AbortController().signal)
+  assert.equal(result.candidates.length, 1)
+  const [card] = result.candidates
+  assert.equal(findBannedPhrase(card.text), '')
+  assert.equal(findBannedPhrase(card.why ?? ''), '')
+  assert.equal(findBannedPhrase(card.risk ?? ''), '')
+  assert.match(card.why, /缩小范围/)
+})

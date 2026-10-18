@@ -236,7 +236,7 @@ function apply(ctx) {
         await ensureHistory()
         const transcript = readTranscript()
         if (!transcript.some(row => row.role === 'user')) {
-          store.set({ status: 'idle', candidates: [] })
+          store.set({ status: 'idle', candidates: [], warning: '', salvaged: false })
           return
         }
         const response = await fetch(ROUTE, {
@@ -296,11 +296,11 @@ function apply(ctx) {
         if (mine.signal.aborted) {
           const reason = mine.signal.reason
           if (reason && reason.message === 'prediction timed out') {
-            store.set({ status: 'error', error: mode === 'expert' ? '深度推演超时，请重试或切回快速' : '预测超时，请重试' })
+            store.set({ status: 'error', warning: '', salvaged: false, error: mode === 'expert' ? '深度推演超时，请重试或切回快速' : '预测超时，请重试' })
           }
           return
         }
-        store.set({ status: 'error', error: String(error?.message ?? error) })
+        store.set({ status: 'error', warning: '', salvaged: false, error: String(error?.message ?? error) })
       } finally {
         window.clearTimeout(timer)
         if (controller === mine) controller = null

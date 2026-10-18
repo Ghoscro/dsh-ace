@@ -545,7 +545,11 @@ export function cleanBannedPhrases(text) {
   out = out.replace(/(^|[，。！？；：\s])综上(?:所述)?[，、：]?/g, '$1')
   out = out.replace(/(^|[，。！？；：\s])建议[，、：]?/g, '$1')
   out = out.replace(/建议|首先|综上/g, '')
-  return out.replace(/[ \t]{2,}/g, ' ').replace(/，{2,}/g, '，').trim()
+  return out
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/，{2,}/g, '，')
+    .replace(/^[，、：；\s]+/, '')
+    .trim()
 }
 
 const voiceBlock = locale => (locale.startsWith('zh') ? VOICE_ZH : VOICE_EN)
@@ -558,7 +562,8 @@ const FORMAT_BLOCK = `[FORMAT - binding]
 
 /** Resolve a request's mode to one of the four, defaulting to standard. */
 export function resolveMode(value) {
-  return ACE_MODES.includes(value) ? value : 'standard'
+  const text = typeof value === 'string' ? value.trim() : value
+  return ACE_MODES.includes(text) ? text : 'standard'
 }
 
 /**
@@ -1098,7 +1103,7 @@ async function rewriteWithoutBanned(ctx, route, config, input, text, signal) {
     user: `[禁用词]\n建议、首先、综上、可以考虑\n\n[作者原话]\n${samples}\n\n[要改的句子]\n${text}\n\n[输出]\n只输出一句改好的话。`,
   }
   const result = await callExpertStage(
-    ctx, route, prompt, config, Math.min(20_000, config.expertMovesTimeoutMs), 500, signal,
+    ctx, route, prompt, config, Math.min(20_000, config.expertMovesTimeoutMs), 900, signal,
   )
   const cleaned = String(result.text ?? '').trim().replace(/^["'“”]+|["'“”]+$/g, '').trim()
   return cleaned.length < 6 ? '' : cleaned
@@ -1161,9 +1166,16 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     if (rewritten && !findBannedPhrase(rewritten)) best.text = rewritten
     else best.text = cleanBannedPhrases(rewritten || best.text)
   }
+  // The card also shows why and risk; the rule covers every visible field.
+  if (best) {
+    for (const field of ['why', 'risk']) {
+      if (best[field] && findBannedPhrase(best[field])) best[field] = cleanBannedPhrases(best[field])
+    }
+  }
   const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
   const lastUser = [...input.transcript].reverse().find(row => row.role === 'user')?.text ?? ''
-  const candidates = best && normalize(best.text) !== normalize(lastUser) ? [best] : []
+  const usable = best && normalize(best.text) !== normalize(lastUser) && best.text.trim() !== ''
+  const candidates = usable ? [best] : []
   return {
     mode: 'expert',
     style: mode,
@@ -1200,6 +1212,7 @@ async function generateFastPrediction(ctx, config, input, signal) {
       const candidates = parsed
         .filter(candidate => normalize(candidate) !== normalize(lastUser))
         .map(candidate => (findBannedPhrase(candidate) ? cleanBannedPhrases(candidate) : candidate))
+        .filter(candidate => candidate.trim() !== '')
       if (candidates.length === 0) throw new Error('prediction repeated the user message')
       return { mode: 'fast', candidates, model: `${route.provider}/${route.model}`, usage: result.usage }
     } catch (error) {
@@ -1315,7 +1328,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
   try {
     const result = await generatePrediction(ctx, config, { transcript, cwd, count, locale, mode, style }, controller.signal)
     if (result.warning) {
-      logPredictionEvent({ status: 'fallback', sessionId, mode: result.mode ?? mode, warning: String(result.warning).slice(0, 300) })
+      logPredictionEvent({ status: 'fallback', sessionId, mode: result.mode ?? mode, style: result.style ?? style, warning: String(result.warning).slice(0, 300) })
     }
     if (!res.writableEnded) {
       sendJson(res, 200, {
@@ -1335,7 +1348,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
     }
   } catch (error) {
     const message = String(error?.message ?? error)
-    logPredictionEvent({ status: 'error', sessionId, mode, message: message.slice(0, 300) })
+    logPredictionEvent({ status: 'error', sessionId, mode, style, message: message.slice(0, 300) })
     if (!res.writableEnded) {
       const code = /timed out/.test(message) ? 'timeout' : /abort|closed|superseded/i.test(message) ? 'aborted' : 'internal'
       sendJson(res, 502, { ok: false, error: { code, message } })

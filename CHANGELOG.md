@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The banned-word rule covers the whole card (text, why, risk); a field that
+  cleans down to nothing drops the move instead of showing an empty card.
 - The voice sample is the owner's own messages, pasted verbatim, instead of
   invented good/bad examples.
 - Hard rule: a card text containing 建议 / 首先 / 综上 / 可以考虑 is sent back
