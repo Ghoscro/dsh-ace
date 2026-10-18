@@ -197,7 +197,7 @@ export function normalizeConfig(config = {}) {
       : 'low',
     expertReasoningEffort: ['none', 'minimal', 'low', 'medium', 'high'].includes(source.expertReasoningEffort)
       ? source.expertReasoningEffort
-      : 'minimal',
+      : 'low',
     expertSituationTimeoutMs: clampInt(source.expertSituationTimeoutMs, 5000, 30000, 12_000),
     expertMovesTimeoutMs: clampInt(source.expertMovesTimeoutMs, 8000, 45000, 25_000),
     temperature: clampNumber(source.temperature, 0, 1.5, 0.8),
