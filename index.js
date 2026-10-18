@@ -625,9 +625,14 @@ export function transcriptWindow(transcript) {
   // Measure what actually gets rendered, not the raw message.
   const size = row => Math.min(String(row?.text ?? '').length, row?.role === 'assistant' ? 1000 : 500)
   let total = rows.slice(start).reduce((sum, row) => sum + size(row), 0)
-  while (total > TRANSCRIPT_MAX_CHARS && rows.length - start > TRANSCRIPT_MIN_MESSAGES) {
-    total -= size(rows[start])
-    start += 1
+  // Drop in blocks here too: a one-message slide every turn would invalidate the
+  // cached prefix just as surely as a sliding window over the whole history.
+  while (total > TRANSCRIPT_MAX_CHARS) {
+    const maxDrop = rows.length - start - TRANSCRIPT_MIN_MESSAGES
+    if (maxDrop <= 0) break
+    const drop = Math.min(TRANSCRIPT_TRIM_BLOCK, maxDrop)
+    for (let step = 0; step < drop; step += 1) total -= size(rows[start + step])
+    start += drop
   }
   return rows.slice(start)
 }
@@ -1198,6 +1203,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
         model: `${route.provider}/${route.model}`,
         evidenceUsed: evidence !== '(none)' && evidence !== '(not a git repository or no changes)',
         usage: result.usage,
+        promptChars: (retryPrompt.system ?? '').length + (retryPrompt.user ?? '').length,
         salvaged: true,
         warning: 'the model did not return structured JSON; its raw answer became the card',
       }
