@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The voice sample is the owner's own messages, pasted verbatim, instead of
+  invented good/bad examples.
+- Hard rule: a card text containing 建议 / 首先 / 综上 / 可以考虑 is sent back
+  once for a rewrite in the user's voice; if that rewrite fails, the offending
+  phrase is removed deterministically so the card is never dropped. The prompt
+  marks this as a style rule, not a safety rule, so the model does not refuse.
 - The card speaks in the user's own voice before it expands: vocabulary,
   sentence length and punctuation are taken from their recent messages, and
   headings/bullets/consultant phrasing are banned in `text`. Wild ideas still

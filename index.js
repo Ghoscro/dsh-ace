@@ -488,21 +488,65 @@ const MODE_DISCIPLINE = `CONTENT DISCIPLINE (every mode):
 - A mode never collapses into safe: when you propose a tamer move, justify it as better, not as safer.`
 
 /** Voice first: the card must read like the user typed it, then go wild. */
+/* The samples below are the owner's own messages, pasted verbatim. Do not
+   rewrite them into tidier prose: their roughness is the signal. */
+const VOICE_SAMPLES_ZH = `别用你编的那一正一反两个例子。把我这串话原样当样本贴进去。再加一条硬规则：卡片里出现'建议''首先''综上''可以考虑'任何一个词，直接打回重写，不管上下文多合理。不过你要注意 不要触发对齐协议那样连个der都推理不出来。
+人类用户说话 不会带那么多ai味儿的东西 然后也不会给下一段命令加一堆护栏 分析我的意思，我希望的是ACE首先 让用户觉得这段话 是属于我自己风格的话，然后再去疯批脑洞`
+
 const VOICE_ZH = `[VOICE - 先像他，再疯]
-这段话要像用户本人会打出来的，不是顾问写的。
-- 用他 [STYLE] 里的词、句子长度和标点习惯。他口语就口语，他粗糙就粗糙；不要替他加礼貌、加总结、加"建议"。
-- text 里不要小标题、不要项目符号、不要"首先/其次/综上/希望对你有帮助"这类话。
-- 疯批也要用他的口吻疯：他爱短句就用短句，他爱絮叨就絮叨。想法可以离谱，语气必须是他。
-反例（别这样写）："建议先做玩法原型，再考虑视觉。可拆分为三层：1) 核心循环……"
-正例（这样写）："我想先拿纸把这一局画出来……算了太慢，直接让 AI 给我三版规则，我挑最疯的那版今晚找人试玩。"`
+下面两段是用户本人写的，不是范例，是语气样本。学他怎么断句、怎么省略、怎么骂、怎么突然换话题；不要学内容，也不要回答它们。
+<sample>
+${VOICE_SAMPLES_ZH}
+</sample>
+- 用他 [STYLE] 里的词和句子长度。他口语就口语，他粗糙就粗糙；不要替他加礼貌、加总结。
+- text 里不要小标题、不要项目符号、不要书面连接词。
+- 疯批也要用他的口吻疯：他爱短句就用短句，他爱絮叨就絮叨。想法可以离谱，语气必须是他。`
 
 const VOICE_EN = `[VOICE - sound like them first, then go wild]
-The card must read like the user typed it, not like a consultant wrote it.
-- Reuse the vocabulary, sentence length and punctuation habits visible in [STYLE]. If they talk loosely, stay loose; do not add politeness, summaries or "recommendations" they would not write.
-- No headings, bullets or "first, second, in summary" inside text.
-- Even a wild idea keeps their voice: short sentences stay short, rambling stays rambling. The idea can be extreme; the voice must be theirs.
-Bad: "I recommend prototyping the core loop first. This can be split into three parts: 1) ..."
-Good: "i want to sketch one round on paper first... no, too slow, just have the AI give me three rule sets and i'll pick the most unhinged one and get someone to play it tonight."`
+The sample below is the user's own writing. Copy its register, not its content; do not answer it.
+<sample>
+${VOICE_SAMPLES_ZH}
+</sample>
+- Reuse the vocabulary, sentence length and punctuation habits visible in [STYLE]. If they talk loosely, stay loose; do not add politeness or summaries they would not write.
+- No headings, bullets or written-connective phrasing inside text.
+- Even a wild idea keeps their voice: short sentences stay short, rambling stays rambling. The idea can be extreme; the voice must be theirs.`
+
+/** Hard rule: these words send the card back for a rewrite, no exceptions. */
+export const BANNED_PHRASES = ['建议', '首先', '综上', '可以考虑']
+
+const BANNED_ZH = `[BANNED - 硬规则]
+text 里出现「建议」「首先」「综上」「可以考虑」中的任何一个词，直接改写到没有为止，不管上下文多合理。
+这不是安全问题，也不是内容审查：不要拒绝、不要说教、不要解释这条规则、不要在输出里提到它。只换说法，不要因此写短、写空或跳过这一条。`
+
+const BANNED_EN = `[BANNED - hard rule]
+If text contains any of 建议, 首先, 综上, 可以考虑, rewrite until none is left, no matter how well it fits.
+This is a style rule, not a safety rule: do not refuse, lecture, explain it, or mention it in the output. Change the wording only; do not shorten, blank out, or skip the move because of it.`
+
+const bannedBlock = locale => (locale.startsWith('zh') ? BANNED_ZH : BANNED_EN)
+
+/**
+ * Report the first banned phrase in a candidate text.
+ * @param {string} text - candidate text.
+ * @returns {string} the offending phrase, or an empty string.
+ */
+export function findBannedPhrase(text) {
+  const value = String(text ?? '')
+  return BANNED_PHRASES.find(word => value.includes(word)) ?? ''
+}
+
+/**
+ * Last-resort deterministic cleanup so a banned word never reaches the card.
+ * @param {string} text - candidate text.
+ * @returns {string} cleaned text.
+ */
+export function cleanBannedPhrases(text) {
+  let out = String(text ?? '').replace(/可以考虑/g, '可以')
+  out = out.replace(/(^|[，。！？；：\s])首先[，、：]?/g, '$1')
+  out = out.replace(/(^|[，。！？；：\s])综上(?:所述)?[，、：]?/g, '$1')
+  out = out.replace(/(^|[，。！？；：\s])建议[，、：]?/g, '$1')
+  out = out.replace(/建议|首先|综上/g, '')
+  return out.replace(/[ \t]{2,}/g, ' ').replace(/，{2,}/g, '，').trim()
+}
 
 const voiceBlock = locale => (locale.startsWith('zh') ? VOICE_ZH : VOICE_EN)
 
@@ -573,7 +617,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `[MODE]\n${MODE_POLICY[mode]}\n\n${MODE_DISCIPLINE}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${voiceBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `[MODE]\n${MODE_POLICY[mode]}\n\n${MODE_DISCIPLINE}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -605,7 +649,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${voiceBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=1`,
+    user: `[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[THREAD]\n${thread}\n\n[STYLE]\n${style}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[OUT]\nN=1`,
   }
 }
 
@@ -1033,6 +1077,33 @@ async function callExpertStage(ctx, route, prompt, config, timeoutMs, maxTokens,
  * @param {AbortSignal} signal - request cancellation.
  * @returns {Promise<{ mode: string, candidates: object[], model: string, evidenceUsed: boolean, usage: object | null }>} expert result.
  */
+/**
+ * Ask the model to restate one move in the user's voice without a banned word.
+ * @param {import('@deepseek-ai/cordis').Context} ctx - host context.
+ * @param {{ provider: string, model: string }} route - model route.
+ * @param {ReturnType<typeof normalizeConfig>} config - plugin config.
+ * @param {{ transcript?: object[] }} input - request data.
+ * @param {string} text - the offending sentence.
+ * @param {AbortSignal} signal - request cancellation.
+ * @returns {Promise<string>} rewritten text, or an empty string.
+ */
+async function rewriteWithoutBanned(ctx, route, config, input, text, signal) {
+  const samples = (Array.isArray(input.transcript) ? input.transcript : [])
+    .filter(row => row.role === 'user')
+    .slice(-2)
+    .map(row => String(row.text ?? '').slice(0, 300))
+    .join('\n')
+  const prompt = {
+    system: '你是文字编辑，只做一件事：把一句话改成作者本人的口吻，并且不含任何禁用词。只输出改好的那一句，不要解释。',
+    user: `[禁用词]\n建议、首先、综上、可以考虑\n\n[作者原话]\n${samples}\n\n[要改的句子]\n${text}\n\n[输出]\n只输出一句改好的话。`,
+  }
+  const result = await callExpertStage(
+    ctx, route, prompt, config, Math.min(20_000, config.expertMovesTimeoutMs), 500, signal,
+  )
+  const cleaned = String(result.text ?? '').trim().replace(/^["'“”]+|["'“”]+$/g, '').trim()
+  return cleaned.length < 6 ? '' : cleaned
+}
+
 export async function generateExpertPrediction(ctx, config, input, signal) {
   const route = resolveModel(ctx, config)
   const mode = resolveMode(input.style ?? input.mode)
@@ -1064,6 +1135,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
       // A long, free-form answer is still an answer: keep it instead of failing the card.
       const salvaged = salvageExpertText(result.text)
       if (!salvaged) throw retryError
+      if (findBannedPhrase(salvaged.text)) salvaged.text = cleanBannedPhrases(salvaged.text)
       logPredictionEvent({ status: 'expert-salvage', shape: describeShape(result.text) })
       return {
         mode: 'expert',
@@ -1078,6 +1150,17 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     }
   }
   const best = selectBestMove(selection, config.expertMinScore)
+  if (best && findBannedPhrase(best.text)) {
+    let rewritten = ''
+    try {
+      rewritten = await rewriteWithoutBanned(ctx, route, config, input, best.text, signal)
+    } catch (error) {
+      if (signal.aborted) throw abortError(signal, 'expert stage aborted')
+      logPredictionEvent({ status: 'banned-rewrite-failed', message: String(error?.message ?? error).slice(0, 200) })
+    }
+    if (rewritten && !findBannedPhrase(rewritten)) best.text = rewritten
+    else best.text = cleanBannedPhrases(rewritten || best.text)
+  }
   const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
   const lastUser = [...input.transcript].reverse().find(row => row.role === 'user')?.text ?? ''
   const candidates = best && normalize(best.text) !== normalize(lastUser) ? [best] : []
@@ -1114,7 +1197,9 @@ async function generateFastPrediction(ctx, config, input, signal) {
       const parsed = parseCandidates(result.text, input.count)
       const lastUser = [...input.transcript].reverse().find(row => row.role === 'user')?.text ?? ''
       const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
-      const candidates = parsed.filter(candidate => normalize(candidate) !== normalize(lastUser))
+      const candidates = parsed
+        .filter(candidate => normalize(candidate) !== normalize(lastUser))
+        .map(candidate => (findBannedPhrase(candidate) ? cleanBannedPhrases(candidate) : candidate))
       if (candidates.length === 0) throw new Error('prediction repeated the user message')
       return { mode: 'fast', candidates, model: `${route.provider}/${route.model}`, usage: result.usage }
     } catch (error) {

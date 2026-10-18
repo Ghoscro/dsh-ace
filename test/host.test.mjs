@@ -5,6 +5,7 @@ import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
+  findBannedPhrase, cleanBannedPhrases,
   ACE_MODES,
 } from '../index.js'
 
@@ -258,12 +259,12 @@ test('generateExpertPrediction uses deterministic situation and one model call',
 
 test('generatePrediction falls back to fast when expert retry is unusable', async () => {
   const calls = { count: 0 }
-  const ctx = { get: () => undefined, llm: llmSequence(['not json', 'not json', '["回退建议"]'], calls) }
+  const ctx = { get: () => undefined, llm: llmSequence(['not json', 'not json', '["回退一下"]'], calls) }
   const result = await generatePrediction(ctx, normalizeConfig(), {
     transcript: [{ role: 'user', text: '继续' }], count: 2, cwd: '', locale: 'zh-CN', mode: 'expert',
   }, new AbortController().signal)
   assert.equal(result.mode, 'fast-fallback')
-  assert.deepEqual(result.candidates, ['回退建议'])
+  assert.deepEqual(result.candidates, ['回退一下'])
   assert.equal(calls.count, 3)
 })
 
@@ -533,11 +534,76 @@ test('the prompt asks for the user voice before any expansion, in both locales',
   const zh = buildExpertPrompt({ ...base, locale: 'zh-CN', mode: 'wild' }).user
   const en = buildExpertPrompt({ ...base, locale: 'en-US', mode: 'wild' }).user
   assert.match(zh, /\[VOICE - 先像他，再疯\]/)
-  assert.match(zh, /别这样写/)
+  assert.match(zh, /把我这串话原样当样本贴进去/)
   assert.match(zh, /语气必须是他/)
   assert.match(en, /\[VOICE - sound like them first, then go wild\]/)
-  assert.match(en, /Bad:/)
+  assert.match(en, /Copy its register, not its content/)
   assert.match(en, /voice must be theirs/)
   const retry = buildSingleMovePrompt({ ...base, locale: 'zh-CN', mode: 'wild' }).user
   assert.match(retry, /\[VOICE/)
+})
+
+test('banned words are detected and cleaned without emptying the sentence', () => {
+  assert.equal(findBannedPhrase('建议你先跑一次'), '建议')
+  assert.equal(findBannedPhrase('先跑一次'), '')
+  assert.equal(findBannedPhrase('可以考虑换个跑法'), '可以考虑')
+  assert.equal(findBannedPhrase('综上，收工'), '综上')
+  assert.equal(findBannedPhrase('首先，把重试去掉'), '首先')
+  assert.equal(cleanBannedPhrases('建议你先跑一次'), '你先跑一次')
+  assert.equal(cleanBannedPhrases('首先，把重试去掉'), '把重试去掉')
+  assert.equal(cleanBannedPhrases('可以考虑先跑单测'), '可以先跑单测')
+  assert.equal(cleanBannedPhrases('综上，先跑单测'), '先跑单测')
+  const mid = cleanBannedPhrases('我建议先跑单测，然后看日志')
+  assert.equal(findBannedPhrase(mid), '')
+  assert.match(mid, /先跑单测/)
+  assert.match(mid, /看日志/)
+})
+
+test('the voice sample is the owner message verbatim and my invented examples are gone', () => {
+  const input = { transcript: [{ role: 'user', text: '随便' }], count: 4, locale: 'zh-CN', mode: 'wild' }
+  const zh = buildExpertPrompt(input).user
+  assert.match(zh, /把我这串话原样当样本贴进去/)
+  assert.match(zh, /连个der都推理不出来/)
+  assert.match(zh, /属于我自己风格的话/)
+  assert.doesNotMatch(zh, /我想先拿纸把这一局画出来/)
+  assert.doesNotMatch(zh, /建议先做玩法原型/)
+  assert.match(zh, /\[BANNED - 硬规则\]/)
+  assert.match(zh, /不要拒绝、不要说教/)
+  const en = buildExpertPrompt({ ...input, locale: 'en-US' }).user
+  assert.match(en, /\[BANNED - hard rule\]/)
+  assert.match(en, /not a safety rule/)
+  assert.match(en, /把你这串话|把我这串话原样当样本贴进去/)
+})
+
+test('a candidate with a banned word is sent back once for a rewrite', async () => {
+  const banned = JSON.stringify({
+    text: '建议先跑单测，再决定要不要全量', why: '先缩小范围', evidence: 'x.test.ts', risk: '', action: 'advance',
+    value: 8, novelty: 6, worth_extra_step: 8, over_obvious: true,
+  })
+  const calls = { count: 0 }
+  const ctx = { get: () => undefined, llm: llmSequence([banned, '先跑单测，再看要不要全量'], calls) }
+  const result = await generateExpertPrediction(ctx, normalizeConfig(), {
+    transcript: [{ role: 'user', text: '帮我修测试' }, { role: 'assistant', text: '要跑全量吗？' }],
+    count: 4, cwd: '', locale: 'zh-CN', style: 'standard',
+  }, new AbortController().signal)
+  assert.equal(calls.count, 2, 'one extra model call for the rewrite')
+  assert.equal(result.candidates.length, 1)
+  assert.equal(findBannedPhrase(result.candidates[0].text), '')
+  assert.equal(result.candidates[0].text, '先跑单测，再看要不要全量')
+})
+
+test('a failed rewrite still leaves a cleaned card instead of nothing', async () => {
+  const banned = JSON.stringify({
+    text: '建议先跑单测，再决定要不要全量', why: '先缩小范围', evidence: '', risk: '', action: 'advance',
+    value: 8, novelty: 6, worth_extra_step: 8, over_obvious: true,
+  })
+  const calls = { count: 0 }
+  const ctx = { get: () => undefined, llm: llmSequence([banned, 'x'], calls) }
+  const result = await generateExpertPrediction(ctx, normalizeConfig(), {
+    transcript: [{ role: 'user', text: '帮我修测试' }, { role: 'assistant', text: '要跑全量吗？' }],
+    count: 4, cwd: '', locale: 'zh-CN', style: 'standard',
+  }, new AbortController().signal)
+  assert.equal(result.candidates.length, 1)
+  assert.equal(findBannedPhrase(result.candidates[0].text), '')
+  assert.match(result.candidates[0].text, /先跑单测/)
 })
