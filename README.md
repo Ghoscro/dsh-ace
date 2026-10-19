@@ -113,6 +113,7 @@ The parser scans balanced JSON objects and skips a truncated or malformed line w
 - **Cache:** the rules and the voice samples form a byte-identical head, the conversation is appended instead of re-windowed every turn, and only the volatile tail (mode, situation, evidence) changes, so the provider's automatic prefix cache can hit on most of the prompt.
 - **Automatic ACE:** one ACE suggestion after each completed turn. You can turn it off in the ACE settings.
 - **Pause:** stops automatic suggestions; `✦ ACE` still works on demand.
+- **Text size:** one slider in the settings panel drives `--dsh-fs-w` / `--dsh-fs-meta` / `--dsh-fs-x`. The value is stored in `chrome.storage.local` when the container exposes the extension API (`localStorage` otherwise) and set on `document.documentElement.style`, so changing the size never needs a rebuild.
 - **Model:** uses the active DSH agent default, or the plugin’s configured route.
 - **Privacy:** the recent transcript and the local evidence pack go to the selected model. Nothing is written to the session, and there is no cross-session learning. With `captureSamples: false` nothing is kept locally either.
 - **Ledger:** each session keeps an append-only record of what the predictor saw; the prompt is rebuilt from it, so the prefix only grows, and past `ledgerMaxEntries` the oldest part is written to an archive file and replaced by a deterministic digest. `ledger: false` turns it off.

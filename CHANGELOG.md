@@ -18,6 +18,12 @@
   whether the red badge is still there". A novice test locks it.
 - `why` falls back to the Y beat, so a four-beat answer without `why` is not
   discarded.
+- Type sizes are three CSS variables (`--dsh-fs-w` / `--dsh-fs-meta` /
+  `--dsh-fs-x`) with one slider in the settings panel. The value is stored in
+  `chrome.storage.local` when the container exposes the extension API
+  (`localStorage` otherwise) and applied to `document.documentElement.style`,
+  so changing the size never needs a rebuild. `client.js` may not contain a raw
+  `font-size: Npx`; a host test fails the suite if one reappears.
 
 ## 0.4.0 — 2026-10-19
 

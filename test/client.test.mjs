@@ -24,10 +24,15 @@ function loadClient() {
     },
   }
   const appended = []
+  const rootStyle = {
+    values: {},
+    setProperty(name, value) { this.values[name] = value },
+  }
   const document = {
     head: { append: element => appended.push(element) },
     createElement: () => ({ textContent: '', remove: () => {} }),
     querySelector: () => null,
+    documentElement: { style: rootStyle },
   }
   const context = {
     window,
@@ -56,7 +61,7 @@ function loadClient() {
     if (name === 'react') return react
     throw new Error(`unexpected require: ${name}`)
   })
-  return { exports, document, window, appended }
+  return { exports, document, window, appended, rootStyle }
 }
 
 test('client module exposes the cordis face and pure helpers', () => {
@@ -182,5 +187,37 @@ test('the card styles cover the four beats', () => {
   assert.match(css, /\.dcp-z\{/)
   assert.match(css, /\.dcp-rel\{/)
   assert.match(css, /\.dcp-beat\{/)
+})
+
+test('the type scale is written to the document root at runtime', () => {
+  const { exports, rootStyle } = loadClient()
+  const ctx = {
+    effect(fn) {
+      fn()
+      return () => {}
+    },
+    locale: { register: () => () => {} },
+    slots: {
+      inject(_name, install) {
+        install()
+        return () => {}
+      },
+      register: () => () => {},
+    },
+    sessions: {},
+  }
+  exports.apply(ctx)
+  assert.equal(rootStyle.values['--dsh-fs-w'], '15px')
+  assert.equal(rootStyle.values['--dsh-fs-meta'], '13px')
+  assert.equal(rootStyle.values['--dsh-fs-x'], '12px')
+})
+
+test('the type scale clamps and stays proportional', () => {
+  const { exports } = loadClient()
+  const normalize = value => JSON.parse(JSON.stringify(exports.__test.normalizeFont(value)))
+  assert.deepEqual(normalize({ w: 18 }), { w: 18, meta: 16, x: 15 })
+  assert.deepEqual(normalize({ w: 99 }), { w: 20, meta: 18, x: 17 })
+  assert.deepEqual(normalize({ w: 1 }), { w: 12, meta: 12, x: 12 })
+  assert.deepEqual(normalize({ w: 15, meta: 14, x: 11 }), { w: 15, meta: 14, x: 12 })
 })
 

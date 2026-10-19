@@ -13,7 +13,7 @@ const zh = {
   title: '深度预测', loading: '正在预测下一句…', refresh: '重新推演', close: '关闭深度预测',
   error: '深度预测失败', retry: '重试', inserted: '深度预测建议已填入',
   undo: '撤销', settings: '深度预测设置', auto: '自动生成深度预测', pause: '暂停深度预测',
-  count: '候选数量', privacy: '深度预测会把最近几轮对话发给当前模型；不写入会话记录，不跨会话学习。',
+  count: '候选数量', fontSize: '字号', privacy: '深度预测会把最近几轮对话发给当前模型；不写入会话记录，不跨会话学习。',
   button: '深度预测', buttonTitle: '生成一条深度预测（Tab 采用）',
   deep: '深度预测', deepTitle: '生成一条深度预测（约 10–50 秒，可取消）',
   deepLoading: '深度预测正在推演下一步…', autoExpert: '每轮自动生成深度预测建议',
@@ -27,7 +27,7 @@ const en = {
   title: 'ACE Move', loading: 'ACE is predicting your next move…', refresh: 'Think again',
   close: 'Dismiss ACE', error: 'ACE failed',
   retry: 'Retry', inserted: 'ACE Move inserted', undo: 'Undo', settings: 'ACE settings',
-  auto: 'Generate ACE automatically', pause: 'Pause ACE', count: 'Candidates',
+  auto: 'Generate ACE automatically', pause: 'Pause ACE', count: 'Candidates', fontSize: 'Text size',
   privacy: 'ACE sends the recent turns to the current model. Nothing is written to the session and nothing is learned across sessions.',
   button: '✦ ACE', buttonTitle: 'Generate one ACE Move (Tab accepts it)',
   deep: 'ACE', deepTitle: 'Generate one ACE Move (about 10–50 seconds, cancelable)',
@@ -139,6 +139,93 @@ const EMPTY_STATE = Object.freeze({
 })
 const EMPTY_STORE = { get: () => EMPTY_STATE, subscribe: () => () => {} }
 
+/* Type scale. The card reads three CSS variables so the size can change at
+   runtime; no rebuild and no new tarball. Defaults live in the var() fallbacks. */
+const FONT_KEY = 'dsh-ace.font'
+const FONT_DEFAULT = { w: 15, meta: 13, x: 12 }
+const FONT_MIN = 12
+const FONT_MAX = 20
+const clampFont = value => {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return null
+  return Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(number * 2) / 2))
+}
+function normalizeFont(value) {
+  const w = clampFont(value?.w) ?? FONT_DEFAULT.w
+  return {
+    w,
+    meta: clampFont(value?.meta) ?? Math.max(FONT_MIN, w - 2),
+    x: clampFont(value?.x) ?? Math.max(FONT_MIN, w - 3),
+  }
+}
+function readFontSync() {
+  try {
+    const raw = window.localStorage.getItem(FONT_KEY)
+    return raw ? normalizeFont(JSON.parse(raw)) : { ...FONT_DEFAULT }
+  } catch {
+    return { ...FONT_DEFAULT }
+  }
+}
+/* chrome.storage.local is the requested store; DSH's web container does not
+   always expose the extension API, so localStorage is the fallback. Either way
+   the change only touches CSS variables on documentElement. */
+const fontStorage = {
+  chromeStore() {
+    try {
+      return typeof chrome !== 'undefined' && chrome?.storage?.local ? chrome.storage.local : null
+    } catch {
+      return null
+    }
+  },
+  read(handler) {
+    const store = this.chromeStore()
+    if (store) {
+      try {
+        const result = store.get(FONT_KEY, value => handler(normalizeFont(value?.[FONT_KEY])))
+        if (result && typeof result.then === 'function') {
+          result.then(value => handler(normalizeFont(value?.[FONT_KEY]))).catch(() => {})
+        }
+        return
+      } catch { /* fall back to localStorage */ }
+    }
+    handler(readFontSync())
+  },
+  write(value) {
+    const store = this.chromeStore()
+    if (store) {
+      try {
+        const result = store.set({ [FONT_KEY]: value })
+        if (result && typeof result.catch === 'function') result.catch(() => {})
+      } catch { /* fall back to localStorage */ }
+    }
+    try { window.localStorage.setItem(FONT_KEY, JSON.stringify(value)) } catch { /* storage can be unavailable */ }
+  },
+  watch(handler) {
+    try {
+      if (typeof chrome !== 'undefined' && chrome?.storage?.onChanged) {
+        const listener = (changes, area) => {
+          if (area === 'local' && changes?.[FONT_KEY]) handler(normalizeFont(changes[FONT_KEY].newValue))
+        }
+        chrome.storage.onChanged.addListener(listener)
+        return () => chrome.storage.onChanged.removeListener(listener)
+      }
+    } catch { /* fall back to the DOM event */ }
+    const onStorage = event => {
+      if (event.key !== FONT_KEY || !event.newValue) return
+      try { handler(normalizeFont(JSON.parse(event.newValue))) } catch { /* ignore a broken value */ }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  },
+}
+function applyFont(value) {
+  const root = document?.documentElement?.style
+  if (!root || typeof root.setProperty !== 'function') return
+  root.setProperty('--dsh-fs-w', `${value.w}px`)
+  root.setProperty('--dsh-fs-meta', `${value.meta}px`)
+  root.setProperty('--dsh-fs-x', `${value.x}px`)
+}
+
 function apply(ctx) {
   const stores = new Map()
   const faces = new Map()
@@ -156,6 +243,33 @@ function apply(ctx) {
       return () => { settingsListeners.delete(listener) }
     },
   }
+
+  /* Runtime type scale: the slider writes the store, the store writes the
+     documentElement variables, and a storage listener keeps other windows in
+     sync. Changing the size never needs a rebuild. */
+  const fontListeners = new Set()
+  let font = readFontSync()
+  const fontStore = {
+    get: () => font,
+    set: (next) => {
+      font = normalizeFont(next)
+      for (const listener of fontListeners) listener()
+    },
+    subscribe: (listener) => {
+      fontListeners.add(listener)
+      return () => { fontListeners.delete(listener) }
+    },
+  }
+  const stopFontWatch = fontStorage.watch(next => fontStore.set(next))
+  fontStorage.read(next => fontStore.set(next))
+  ctx.effect(() => {
+    applyFont(font)
+    const stop = fontStore.subscribe(value => applyFont(value))
+    return () => {
+      stop()
+      stopFontWatch()
+    }
+  }, 'dsh-ace font variables')
 
   function getStore(sessionId) {
     let store = stores.get(sessionId)
@@ -329,45 +443,48 @@ function apply(ctx) {
 
   const style = document.createElement('style')
   style.textContent = [
-    '.dcp-dock{box-sizing:border-box;width:100%;margin:0 0 6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.24));border-radius:12px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#0f1115);box-shadow:0 2px 10px rgba(0,0,0,.06);font:inherit;font-size:15px;line-height:1.5}',
+    '.dcp-dock{box-sizing:border-box;width:100%;margin:0 0 6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.24));border-radius:12px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#0f1115);box-shadow:0 2px 10px rgba(0,0,0,.06);font:inherit;font-size:var(--dsh-fs-w,15px);line-height:1.5}',
     '.dcp-head{display:flex;align-items:center;gap:8px;min-height:26px;margin-bottom:4px}',
-    '.dcp-title{font-size:13px;letter-spacing:.02em;opacity:.68;white-space:nowrap}',
-    '.dcp-loading{font-size:12.5px;opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.dcp-title{font-size:var(--dsh-fs-x,12px);letter-spacing:.02em;opacity:.68;white-space:nowrap}',
+    '.dcp-loading{font-size:var(--dsh-fs-meta,13px);opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.dcp-spacer{flex:1}',
-    '.dcp-icon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:15px;line-height:1;cursor:pointer;opacity:.65}',
+    '.dcp-icon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:var(--dsh-fs-meta,13px);line-height:1;cursor:pointer;opacity:.65}',
     '.dcp-icon:hover,.dcp-icon:focus-visible{background:var(--dsw-specific-bubble,#ffffff12);opacity:1}',
     '.dcp-row{display:flex;align-items:flex-start;gap:8px;box-sizing:border-box;width:100%;min-height:36px;padding:7px 6px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}',
     '.dcp-row:hover,.dcp-row:focus-visible{background:var(--dsw-specific-bubble,#ffffff10)}',
     '.dcp-row[data-first=true] .dcp-text{font-weight:500}',
-    '.dcp-key{flex:none;min-width:42px;padding:0 5px;margin-top:2px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.32));border-radius:4px;font-size:11px;line-height:18px;text-align:center;opacity:.6}',
+    '.dcp-key{flex:none;min-width:42px;padding:0 5px;margin-top:2px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.32));border-radius:4px;font-size:var(--dsh-fs-x,12px);line-height:1.6;text-align:center;opacity:.6}',
     '.dcp-body{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}',
-    '.dcp-text{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere;font-size:15px;line-height:1.5}',
-    '.dcp-why{font-size:13px;line-height:1.45;opacity:.66;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
-    '.dcp-x{font-size:12.5px;line-height:1.4;opacity:.6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
-    '.dcp-z{font-size:13px;line-height:1.45;opacity:.64;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
-    '.dcp-rel{font-size:13px;line-height:1.45;opacity:.72;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-text{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere;font-size:var(--dsh-fs-w,15px);line-height:1.5}',
+    '.dcp-why{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.66;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-x{font-size:var(--dsh-fs-meta,13px);line-height:1.4;opacity:.6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-z{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.64;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-rel{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.72;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-beat{font-weight:700;opacity:.82;margin-right:2px}',
-    '.dcp-meta{font-size:12px;line-height:1.4;opacity:.52;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}',
-    '.dcp-warning{font-size:12.5px;line-height:1.4;color:#b8860b;margin:3px 6px 0}',
+    '.dcp-meta{font-size:var(--dsh-fs-meta,13px);line-height:1.4;opacity:.52;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}',
+    '.dcp-warning{font-size:var(--dsh-fs-meta,13px);line-height:1.4;color:#b8860b;margin:3px 6px 0}',
     '.dcp-skeleton{height:12px;margin:7px 6px;border-radius:6px;background:linear-gradient(90deg,var(--dsw-specific-bubble,#ffffff0c),#ffffff18,var(--dsw-specific-bubble,#ffffff0c));background-size:200% 100%;animation:dcp-shimmer 1.4s linear infinite}',
     '.dcp-skeleton:nth-child(2){width:82%}.dcp-skeleton:nth-child(3){width:66%}',
     '@keyframes dcp-shimmer{0%{background-position:180% 0}100%{background-position:-20% 0}}',
     '@media (prefers-reduced-motion:reduce){.dcp-skeleton{animation:none}}',
-    '.dcp-error{display:flex;align-items:center;gap:8px;padding:3px 6px;color:#f0a0a0;font-size:13px}',
+    '.dcp-error{display:flex;align-items:center;gap:8px;padding:3px 6px;color:#f0a0a0;font-size:var(--dsh-fs-meta,13px)}',
     '.dcp-error span{min-width:0;overflow:hidden;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}',
-    '.dcp-undo{display:flex;align-items:center;gap:8px;margin-top:4px;padding:3px 6px;font-size:12.5px;opacity:.72}',
+    '.dcp-undo{display:flex;align-items:center;gap:8px;margin-top:4px;padding:3px 6px;font-size:var(--dsh-fs-x,12px);opacity:.72}',
     '.dcp-undo button{border:0;background:transparent;color:inherit;font:inherit;text-decoration:underline;cursor:pointer;padding:0}',
-    '.dcp-settings{margin-top:6px;padding-top:7px;border-top:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.2));display:grid;gap:6px;font-size:13px}',
+    '.dcp-settings{margin-top:6px;padding-top:7px;border-top:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.2));display:grid;gap:6px;font-size:var(--dsh-fs-meta,13px)}',
     '.dcp-modes{display:flex;flex-wrap:wrap;gap:4px;align-items:center}',
     '.dcp-modes-label{opacity:.6;margin-right:2px}',
-    '.dcp-mode{height:24px;padding:0 8px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.28));border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;opacity:.75}',
+    '.dcp-mode{height:24px;padding:0 8px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.28));border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:var(--dsh-fs-x,12px);cursor:pointer;opacity:.75}',
     '.dcp-mode:hover,.dcp-mode:focus-visible{opacity:1}',
     '.dcp-mode-on{background:var(--dsw-specific-bubble,#ffffff14);opacity:1;font-weight:600}',
-    '.dcp-mode-chip{font-size:12px;opacity:.6;margin-left:2px}',
+    '.dcp-mode-chip{font-size:var(--dsh-fs-x,12px);opacity:.6;margin-left:2px}',
     '.dcp-settings label{display:flex;align-items:center;gap:6px}',
-    '.dcp-settings select{border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.32));border-radius:5px;background:transparent;color:inherit;font:inherit;font-size:13px;padding:2px 5px}',
-    '.dcp-settings small{opacity:.55;line-height:1.45;font-size:11.5px}',
-    '.dcp-button{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 8px;border:0;border-radius:7px;background:transparent;color:inherit;font:inherit;font-size:13px;cursor:pointer;opacity:.72;white-space:nowrap}',
+    '.dcp-settings select{border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.32));border-radius:5px;background:transparent;color:inherit;font:inherit;font-size:var(--dsh-fs-meta,13px);padding:2px 5px}',
+    '.dcp-settings small{opacity:.55;line-height:1.45;font-size:var(--dsh-fs-x,12px)}',
+    '.dcp-font{display:flex;align-items:center;gap:8px}',
+    '.dcp-font input[type=range]{flex:1;min-width:0;accent-color:var(--dsw-alias-label-primary,#0f1115)}',
+    '.dcp-font-value{min-width:38px;text-align:right;opacity:.6;font-variant-numeric:tabular-nums}',
+    '.dcp-button{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 8px;border:0;border-radius:7px;background:transparent;color:inherit;font:inherit;font-size:var(--dsh-fs-x,12px);cursor:pointer;opacity:.72;white-space:nowrap}',
     '.dcp-button:hover,.dcp-button:focus-visible{background:var(--dsw-specific-bubble,#ffffff10);opacity:1}',
     '.dcp-button[disabled]{opacity:.35;cursor:default}',
     '.dcp-mini-spinner{display:inline-block;width:10px;height:10px;border:1.5px solid currentColor;border-right-color:transparent;border-radius:50%;animation:dcp-spin .7s linear infinite}',
@@ -383,6 +500,7 @@ function apply(ctx) {
     const store = face ? face.store : EMPTY_STORE
     const state = useSyncExternalStore(store.subscribe, store.get, store.get)
     const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.get, settingsStore.get)
+    const font = useSyncExternalStore(fontStore.subscribe, fontStore.get, fontStore.get)
     const input = useInput(snapshot => snapshot)
     const session = useSession(snapshot => snapshot)
     const [settingsOpen, setSettingsOpen] = useState(false)
@@ -598,6 +716,11 @@ function apply(ctx) {
     }
 
     const update = patch => settingsStore.set(patch)
+    const updateFont = value => {
+      const next = normalizeFont(value)
+      fontStore.set(next)
+      fontStorage.write(next)
+    }
 
     return React.createElement('section', {
       className: 'dcp-dock',
@@ -674,6 +797,14 @@ function apply(ctx) {
             type: 'checkbox', checked: settings.autoExpert,
             onChange: event => update({ autoExpert: event.target.checked }),
           }), t('autoExpert')),
+        React.createElement('label', { className: 'dcp-font' },
+          React.createElement('span', null, t('fontSize')),
+          React.createElement('input', {
+            type: 'range', min: FONT_MIN, max: FONT_MAX, step: 0.5,
+            value: font.w, 'aria-label': t('fontSize'),
+            onChange: event => updateFont({ w: Number(event.target.value) }),
+          }),
+          React.createElement('span', { className: 'dcp-font-value' }, `${font.w}px`)),
         React.createElement('small', null, t('privacy')))
       : null)
   }
@@ -740,6 +871,6 @@ function apply(ctx) {
 return {
   inject: ['slots', 'locale', 'sessions'],
   apply,
-  __test: { extractTranscript, pickTurnEnd, pickTailEvent, readSettings, clampCount },
+  __test: { extractTranscript, pickTurnEnd, pickTailEvent, readSettings, clampCount, normalizeFont, applyFont },
 }
 }})

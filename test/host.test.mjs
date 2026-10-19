@@ -896,6 +896,14 @@ test('the technical-grounding block is in both prompts and both locales', () => 
   assert.match(buildSingleMovePrompt({ ...base, locale: 'zh-CN', mode: 'wild' }).user, /\[TECH/)
 })
 
+test('client.js never hard-codes a pixel font size', () => {
+  // Type sizes must go through --dsh-fs-w / --dsh-fs-meta / --dsh-fs-x so the
+  // slider can change them at runtime. A raw `font-size: 13px` is a regression.
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const hits = source.match(/font-size:\s*\d+(?:\.\d+)?px/g) ?? []
+  assert.deepEqual(hits, [], `hard-coded font sizes must use CSS variables: ${hits.join(', ')}`)
+})
+
 test('the evidence pack carries project shape, not only a diff', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ace-shape-'))
   mkdirSync(join(dir, 'src'), { recursive: true })
