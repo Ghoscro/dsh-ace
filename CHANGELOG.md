@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.14 — 2026-10-19
+
+- Four diagnostic lamps in the top-right corner of the composer, left to right:
+  F1 received, expanded, local text produced, model text produced. Each turns
+  green when its stage passes, so a stall is visible without a restart or a
+  curl. Typing resets the two text lamps; the key lamp stays on once it fired.
+
 ## 0.5.13 — 2026-10-19
 
 - The local model gains a unigram fallback (an unseen pair still emits a

@@ -11,7 +11,7 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.13'
+const ACE_VERSION = '0.5.14'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -503,6 +503,9 @@ function apply(ctx) {
     '.dcp-plain{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.8;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-ghost{position:fixed;pointer-events:none;z-index:60;box-sizing:border-box;white-space:pre-wrap;overflow:hidden;color:var(--dsw-alias-label-tertiary,#9aa0a6);opacity:.7}',
     '.dcp-ghost-hint{font-size:var(--dcp-hint-size,9px);line-height:1;color:#fff;opacity:.55;letter-spacing:.06em}',
+    '.dcp-chain{position:fixed;z-index:61;display:flex;gap:3px;pointer-events:none}',
+    '.dcp-chain span{width:5px;height:5px;border-radius:50%;background:rgba(127,127,127,.3)}',
+    '.dcp-chain span[data-on=true]{background:#3ddc84;box-shadow:0 0 4px rgba(61,220,132,.8)}',
     '.dcp-z{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.64;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-rel{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.72;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-beat{font-weight:700;opacity:.82;margin-right:2px}',
@@ -596,6 +599,38 @@ function apply(ctx) {
       let layer = null
       let completion = ''
       let expanded = false
+      // Four lamps: key received, expanded, local text, model text. They turn
+      // on as each stage passes, so a stall is visible without a restart.
+      const chain = { key: false, expanded: false, local: false, model: false }
+      let chainLayer = null
+
+      const drawChain = () => {
+        if (typeof document === 'undefined') return
+        const element = textareaOf()
+        if (!chainLayer || !chainLayer.isConnected) {
+          chainLayer = document.createElement('div')
+          chainLayer.className = 'dcp-chain'
+          chainLayer.setAttribute('aria-hidden', 'true')
+          for (let index = 0; index < 4; index += 1) {
+            const dot = document.createElement('span')
+            dot.dataset.on = 'false'
+            chainLayer.appendChild(dot)
+          }
+          document.body.appendChild(chainLayer)
+        }
+        if (!element) {
+          chainLayer.style.display = 'none'
+          return
+        }
+        const rect = element.getBoundingClientRect()
+        chainLayer.style.left = `${Math.max(0, rect.right - 46)}px`
+        chainLayer.style.top = `${Math.max(0, rect.top + 5)}px`
+        chainLayer.style.display = 'flex'
+        chainLayer.children[0].dataset.on = String(chain.key)
+        chainLayer.children[1].dataset.on = String(chain.expanded)
+        chainLayer.children[2].dataset.on = String(chain.local)
+        chainLayer.children[3].dataset.on = String(chain.model)
+      }
 
       const hide = () => {
         completion = ''
@@ -619,6 +654,7 @@ function apply(ctx) {
       }
 
       const paint = draft => {
+        drawChain()
         const element = textareaOf()
         if (!element) return hide()
         // Only paint behind a caret that sits at the end of the draft: a ghost
@@ -668,6 +704,7 @@ function apply(ctx) {
         ghost.textContent = completion
         layer.replaceChildren(hidden, ghost)
         layer.scrollTop = element.scrollTop
+        drawChain()
       }
 
       let cached = { draft: '', completion: '' }
@@ -692,10 +729,13 @@ function apply(ctx) {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ draft, maxChars: 3 }),
         }).then(response => response.json()).then(payload => {
-          // The model answer wins when it lands first; local only fills the gap.
-          if (id !== localSeq || completion) return
+          if (id !== localSeq) return
           const next = typeof payload?.value?.completion === 'string' ? payload.value.completion.trim() : ''
-          if (next) remember(draft, next)
+          chain.local = next !== ''
+          drawChain()
+          // The model answer wins when it lands first; local only fills the gap.
+          if (!next || completion) return
+          remember(draft, next)
         }).catch(() => {})
       }
 
@@ -740,6 +780,7 @@ function apply(ctx) {
               // by the first model token and then grows in place.
               if (typeof payload.full === 'string' && payload.full !== '') {
                 lastLatency = Date.now() - started
+                chain.model = true
                 completion = payload.full
                 paint(draft)
               }
@@ -771,8 +812,12 @@ function apply(ctx) {
       const onInput = event => {
         const element = textareaOf()
         if (!element || event.target !== element) return
-        // Typing collapses the ghost back to the hint.
+        // Typing collapses the ghost back to the hint and resets the text lamps.
         expanded = false
+        chain.expanded = false
+        chain.local = false
+        chain.model = false
+        drawChain()
         schedule(element.value)
       }
 
@@ -784,7 +829,9 @@ function apply(ctx) {
           if (element && document.activeElement === element) {
             event.preventDefault()
             event.stopPropagation()
+            chain.key = true
             expanded = !expanded
+            chain.expanded = expanded
             paint(element.value)
             return
           }
@@ -822,6 +869,8 @@ function apply(ctx) {
         hide()
         if (layer && layer.parentNode) layer.parentNode.removeChild(layer)
         layer = null
+        if (chainLayer && chainLayer.parentNode) chainLayer.parentNode.removeChild(chainLayer)
+        chainLayer = null
       }
     }, [])
 
