@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.10 — 2026-10-19
+
+- The ghost is collapsed by default: only a 9px white `Alt` hint sits in the
+  corner of the composer. Press Alt to expand the full suggestion, Alt again (or
+  any typing) to collapse it. Tab accepts only while expanded, so a stray Tab
+  can never insert a line the user has not seen.
+
 ## 0.5.9 — 2026-10-19
 
 - Ghost text streams. The host forwards every model text delta over SSE

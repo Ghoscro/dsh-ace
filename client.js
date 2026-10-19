@@ -11,7 +11,7 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.9'
+const ACE_VERSION = '0.5.10'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -502,6 +502,7 @@ function apply(ctx) {
     '.dcp-x{font-size:var(--dsh-fs-meta,13px);line-height:1.4;opacity:.6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-plain{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.8;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-ghost{position:fixed;pointer-events:none;z-index:60;box-sizing:border-box;white-space:pre-wrap;overflow:hidden;color:var(--dsw-alias-label-tertiary,#9aa0a6);opacity:.7}',
+    '.dcp-ghost-hint{font-size:var(--dcp-hint-size,9px);line-height:1;color:#fff;opacity:.55;letter-spacing:.06em}',
     '.dcp-z{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.64;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-rel{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.72;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-beat{font-weight:700;opacity:.82;margin-right:2px}',
@@ -594,6 +595,7 @@ function apply(ctx) {
       const textareaOf = () => document.querySelector('[data-composer-card] textarea')
       let layer = null
       let completion = ''
+      let expanded = false
 
       const hide = () => {
         completion = ''
@@ -627,6 +629,25 @@ function apply(ctx) {
           layer.className = 'dcp-ghost'
           layer.setAttribute('aria-hidden', 'true')
           document.body.appendChild(layer)
+        }
+        if (!expanded) {
+          // Collapsed: only a 9px white "Alt" hint in the corner. The ghost
+          // text itself stays hidden until Alt expands it.
+          const rect = element.getBoundingClientRect()
+          layer.style.left = `${Math.max(0, rect.right - 36)}px`
+          layer.style.top = `${Math.max(0, rect.bottom - 18)}px`
+          layer.style.width = 'auto'
+          layer.style.height = 'auto'
+          layer.style.setProperty('--dcp-hint-size', '9px')
+          layer.style.font = ''
+          layer.style.lineHeight = ''
+          layer.style.letterSpacing = ''
+          const hint = document.createElement('span')
+          hint.className = 'dcp-ghost-hint'
+          hint.textContent = 'Alt'
+          layer.replaceChildren(hint)
+          layer.style.display = 'block'
+          return
         }
         place(element)
         layer.style.display = 'block'
@@ -740,12 +761,21 @@ function apply(ctx) {
       const onInput = event => {
         const element = textareaOf()
         if (!element || event.target !== element) return
+        // Typing collapses the ghost back to the hint.
+        expanded = false
         schedule(element.value)
       }
 
       const onKeyDown = event => {
-        if (event.key !== 'Tab' || !completion) return
         const element = textareaOf()
+        if (event.key === 'Alt' && element && document.activeElement === element
+          && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+          event.preventDefault()
+          expanded = !expanded
+          if (completion) paint(element.value)
+          return
+        }
+        if (event.key !== 'Tab' || !completion || !expanded) return
         if (!element || document.activeElement !== element) return
         if (element.selectionStart !== element.value.length) return
         event.preventDefault()
