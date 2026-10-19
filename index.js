@@ -30,6 +30,12 @@ const MAX_EXPERT_WHY = 160
 const MAX_EXPERT_EVIDENCE = 240
 const MAX_EXPERT_RISK = 160
 const MAX_EXPERT_REPLY = 80
+// The four-beat card keeps each beat short enough to read in the composer.
+const MAX_EXPERT_ANCHOR = 60
+const MAX_EXPERT_LINE = 140
+const MAX_EXPERT_TRANSFER = 140
+const MAX_EXPERT_RELATION = 120
+const MAX_EXPERT_FALSIFY = 90
 const VERSION = '0.1.0'
 
 const ZH_SYSTEM = `你是"下一句预测器"。根据对话、用户近况与任务上下文，预测用户下一条会亲自发出的消息，给出 {{N}} 条候选。
@@ -113,7 +119,7 @@ const ZH_EXPERT = `你是用户的专家级 next-move 顾问。不要猜最可�
 
 输出格式：每行一个 JSON 对象，不要数组、不要逗号分隔、不要 markdown、不要代码围栏。
 前 3-5 行是候选，每行：
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"..."}
+{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","transfer":0}
 最后一行是选择：
 {"best_index":0,"comparison":"为什么选它，其他方向差在哪"}
 
@@ -124,6 +130,7 @@ const ZH_EXPERT = `你是用户的专家级 next-move 顾问。不要猜最可�
 - over_obvious 必须回答：相比顺手说“继续/好”，它多得到什么；why 说明这条为什么值得现在发。
 - 若所有候选都不比顺手继续更好，只输出一行：{"best_index":null,"comparison":"没有更好的下一步"}。
 - 不要编造文件名、数字或结论；不要用“你可以/建议/不妨”这类助手口吻。
+- x / y / z / relation / surface_like / falsify / transfer 是四拍卡片的字段，规则见 [INSIGHT]；text 就是第四拍的 W，必须能直接发送。
 - 只输出这些 JSON 行，不要解释。`
 
 const EN_EXPERT = `You are the user's expert next-move advisor. Do not predict the most likely next line; generate 3-5 genuinely different candidate moves, compare them, and keep only the one most worth sending.
@@ -143,6 +150,7 @@ Rules:
 - over_obvious must answer: what does it gain over the obvious "continue/ok"? why explains why it is worth sending now.
 - If no move beats the obvious next line, output one line: {"best_index":null,"comparison":"no better next move"}.
 - Never invent file names, numbers, or conclusions; no assistant voice ("you could", "I suggest").
+- x / y / z / relation / surface_like / falsify / transfer are the four-beat card fields; the rules are in [INSIGHT]. text is the fourth beat (W) and must be sendable as-is.
 - Output only those JSON lines, no commentary.`
 
 /**
@@ -673,28 +681,48 @@ const levelBlock = (locale, level) => (locale.startsWith('zh') ? LEVEL_ZH : LEVE
 
 /** The card should carry an insight the user would not have produced alone. */
 const INSIGHT_ZH = `[INSIGHT - 用户自己想不到的那一层]
-- 这张卡的价值不在"下一步做点什么"，而在用户自己不会想到的那个结构性事实：模块边界正在被穿过、两个概念其实该拆开、这个改动会锁死下次迁移、这个失败模式在领域里很常见、这条路径的成本是幂增的。
-- 每条候选必须写 insight（0-10）：它说出了什么用户没意识到的架构或领域知识。只是"跑个测试、加个日志、改个名字"的 insight 不超过 3，除非它顺带揭示了一个结构性结论。
-- insight 必须落在真实存在的对象上：模块、文件、依赖、接口、数据形状、失败路径。引用 package.json 里的依赖、目录结构或 diff 里的符号，不要泛泛谈"可维护性"。
-- text 仍然是一句能直接发出去的指令，但它执行的是这个洞见，而不是一个机械动作。`
+这张卡不是"再给一条建议"，而是把用户已经知道的东西重新排一遍，让他读完后想"对哦，我怎么没想到"。一张卡只放一个新想法，按四拍写：
+
+1. X 接住那个"一"：x 用他自己的词复述他手上那件具体的事（通常是助手最后一句里他在回应的那句），逐字、具体、不抽象。0-60 字。
+2. Y 点出背后那条线：y 用一句人话说清它为什么成、为什么坏。要搬过去的是这条关系（因果或机制），不是表面上像的地方。抽象词最多一个；不写"边界问题""系统性思考""建议考虑可观测性策略"这种挑不出错但没人会按 Tab 的句子。0-140 字。
+3. Z 指出"三"在哪：z 给一个同一条线会再次冒出来的具体例子。优先从用户熟悉的领域借，不从炫技的领域借。如果 z 和 x 表面不像，relation 必须用一句话写清这条关系怎么对上（哪一步是同一个机制）；写不出来就换一个例子，不要硬凑。z 0-140 字。
+4. W 一个能验收的动作：text 就是这一拍，必须是用户能直接发送的一句话。至少带一个能验收的东西：工程师给文件、命令、测试或阈值；小白给一件能亲眼确认的事（例如"刷新一下，看右上角还报不报红"）。再用 falsify 写清"出现什么结果就说明我错了"（0-90 字）。
+
+字段规则：
+- surface_like：z 和 x 表面上是否也像（就在用户眼皮底下）。true 或 false。
+- relation：surface_like 为 false 时必填，一句话说明关系怎么对上；为 true 时可留空。
+- transfer（0-10）：关系像（同一条因果线）是必须的。表面也像 → 8-10；表面不像但 relation 写明了 → 6-8；表面不像又没写 relation → 0。
+- insight（0-10）：Y 那一拍本身的新意。只是"跑个测试、加个日志、改个名字"不超过 3，除非它顺带揭示了一个结构性结论。
+- 不按"跳了几层"扣分：远类比往往最值钱（把将军攻城的关系拿去解肿瘤放疗），只要 relation 把关系写清楚。
+- y 必须落在真实存在的对象上：模块、文件、依赖、接口、数据形状、失败路径；引用 package.json 里的依赖、目录结构或 diff 里的符号，不要泛泛谈"可维护性"。`
 
 const INSIGHT_EN = `[INSIGHT - the layer the user would not have produced]
-- The card's value is not "some next step": it is a structural fact the user has not seen. A module boundary being crossed, two concepts that should be split, a change that locks the next migration, a failure mode common in this domain, a cost curve that compounds.
-- Every candidate scores insight 0-10: what architecture or domain knowledge does it surface that the user missed? "Run a test, add a log, rename a thing" is at most 3 unless it also exposes a structural conclusion.
-- The insight must land on real objects: modules, files, dependencies, interfaces, data shapes, failure paths. Cite a dependency in package.json, a directory in the tree, or a symbol in the diff; do not wave at "maintainability".
-- text is still a prompt the user can send as-is, but it executes the insight instead of a mechanical step.`
+This card is not "one more suggestion": it reorders what the user already knows so that reading it makes them think "right, why didn't I see that". One new idea per card, in four beats:
+
+1. X catch the "one": x restates the concrete thing in front of the user, in their own words (usually the line of the assistant they are answering). Verbatim, specific, not abstract. 0-60 characters.
+2. Y name the line behind it: y explains in one human sentence why it works or fails. What transfers is that relation (cause or mechanism), not surface resemblance. At most one abstraction; never "a boundary problem", "systematic thinking", or "consider an observability strategy" - sentences nobody would press Tab for. 0-140 characters.
+3. Z point at where the "three" is: z gives one concrete place the same line shows up again. Prefer the user's own domain over a showy one. If z and x do not look alike on the surface, relation must say in one sentence how the relation maps (which step is the same mechanism); if you cannot write it, pick another example. z 0-140 characters.
+4. W one checkable action: text is this beat and must be sendable as-is. It carries at least one thing that can be checked: engineers get a file, command, test or threshold; non-engineers get something they can see with their own eyes ("refresh and look whether the red badge is still there"). falsify says what result would prove the card wrong (0-90 characters).
+
+Field rules:
+- surface_like: whether z also resembles x on the surface (right under the user's nose). true or false.
+- relation: required when surface_like is false; one sentence on how the relation maps. Optional when true.
+- transfer (0-10): a relation (same causal line) is mandatory. Surface also alike -> 8-10; surface unlike but relation written -> 6-8; surface unlike and no relation -> 0.
+- insight (0-10): the novelty of the Y beat alone. "Run a test, add a log, rename a thing" is at most 3 unless it also exposes a structural conclusion.
+- Do not penalize distance: far analogies are often the most valuable (a besieging army's relation used for tumor radiotherapy) as long as relation maps it.
+- y must land on real objects: modules, files, dependencies, interfaces, data shapes, failure paths. Cite a dependency in package.json, a directory in the tree, or a symbol in the diff; do not wave at "maintainability".`
 
 const insightBlock = locale => (locale.startsWith('zh') ? INSIGHT_ZH : INSIGHT_EN)
 
 /** Every card is a technical next prompt, not a vibe. Static so it caches. */
 const TECH_ZH = `[TECH - 这张卡是一句能直接开工的下一轮 prompt]
-- text 必须是一句可以直接发出去的技术指令：至少点名一个文件、命令、参数、测试或验收标准。不要"优化一下""再看看""继续推进"这种空话。
+- text 必须带一个能验收的东西：工程师给文件、命令、参数、测试或阈值；小白给一件他能亲眼确认的事（点哪里、说什么、刷新后看什么）。不要"优化一下""再看看""继续推进"这种空话。
 - 先站住一个推理：从对话或证据里的具体对象（报错、文件名、数字、行为）推出一个缺口，这一步就是为了补它。why 用一句话说清这条推理，不要复述常识。
 - 证据不够时，在 text 或 why 里写明你在假设什么（例如"先假设重试是测试里加的"），不要把猜测写成事实。
 - standard 和 brainstorm 优先给"做完就能验证"的一步；wild 可以大，但要大到能拆成具体动作。`
 
-const TECH_EN = `[TECH - this card is a technical next prompt the user can send as-is]
-- text must be an instruction naming at least one concrete object: a file, command, flag, test, or acceptance check. No "polish it", "take another look", or "keep going".
+const TECH_EN = `[TECH - this card is a next prompt the user can send as-is]
+- text must carry one checkable thing: engineers get a file, command, flag, test or threshold; non-engineers get something they can see for themselves (where to click, what to say, what to look at after a refresh). No "polish it", "take another look", or "keep going".
 - Stand on a reason: infer a specific gap from a named object in the conversation or evidence (an error, a file, a number, a behavior), and make this step close that gap. why states the inference in one line, not common sense.
 - When the evidence is thin, write the assumption into text or why ("assuming the retry lives in the test"), never as fact.
 - standard and brainstorm prefer a step whose result is checkable; wild may be big, but big enough to break into concrete actions.`
@@ -704,7 +732,7 @@ const techBlock = locale => (locale.startsWith('zh') ? TECH_ZH : TECH_EN)
 /** The output contract is restated last so a long mode prompt cannot bury it. */
 const FORMAT_BLOCK = `[FORMAT - binding]
 - Output one JSON object per line, each one complete and closed on the same line. No prose, markdown, headings or code fences outside the objects.
-- Keep text under 800 characters, why under 300, risk under 200. If room runs short, shorten text first; never drop a closing brace to fit more detail.
+- Keep text under 600 characters, x under 60, y and z under 140, relation under 120, falsify under 90, why under 160, risk under 160. If room runs short, shorten text first; never drop a closing brace to fit more detail.
 - If you cannot produce a schema-valid object, output a single line of plain text with your best next move instead of inventing fields; the host will salvage it.`
 
 /** Resolve a request's mode to one of the four, defaulting to standard. */
@@ -907,6 +935,10 @@ export function parseExpertSelection(text, count = 5) {
   }
   const moves = []
   const seen = new Set()
+  const asText = (value, limit) => typeof value === 'string'
+    ? clip(value.replace(/\s+/g, ' ').trim(), limit)
+    : ''
+  const squash = value => String(value ?? '').replace(/\s+/g, '').toLowerCase()
   for (const item of rawMoves) {
     if (moves.length >= limit) break
     const object = item && typeof item === 'object' && !Array.isArray(item) ? item : {}
@@ -919,8 +951,24 @@ export function parseExpertSelection(text, count = 5) {
     const overObvious = typeof object.over_obvious === 'string'
       ? object.over_obvious.replace(/\s+/g, ' ').trim()
       : ''
-    const why = typeof object.why === 'string' ? object.why.replace(/\s+/g, ' ').trim() : overObvious
+    // Four-beat card fields. A candidate that carries none of them stays on the
+    // legacy path so older prompts and stored samples keep working.
+    const x = asText(object.x, MAX_EXPERT_ANCHOR)
+    const y = asText(object.y, MAX_EXPERT_LINE)
+    const z = asText(object.z, MAX_EXPERT_TRANSFER)
+    const relation = asText(object.relation, MAX_EXPERT_RELATION)
+    const falsify = asText(object.falsify, MAX_EXPERT_FALSIFY)
+    // Y is the human line; on a four-beat card it doubles as why.
+    const why = (typeof object.why === 'string' ? object.why.replace(/\s+/g, ' ').trim() : overObvious) || y
     if (why === '') continue
+    const surfaceLike = typeof object.surface_like === 'boolean' ? object.surface_like : null
+    const transferPresent = ('z' in object) || ('transfer' in object)
+    let transfer = normalizeScore(object.transfer)
+    if (transferPresent) {
+      // A relation is mandatory. Surface-unlike without a written mapping scores 0.
+      if (z === '' || squash(z) === squash(x)) transfer = 0
+      if (surfaceLike === false && relation === '') transfer = 0
+    }
     moves.push({
       text: candidate,
       why: clip(why, MAX_EXPERT_WHY),
@@ -934,6 +982,16 @@ export function parseExpertSelection(text, count = 5) {
       insight: normalizeScore(object.insight),
       reply_to: typeof object.reply_to === 'string' ? clip(object.reply_to.replace(/\s+/g, ' ').trim(), MAX_EXPERT_REPLY) : '',
       slot: typeof object.slot === 'string' ? object.slot : '',
+      x,
+      y,
+      z,
+      relation,
+      falsify,
+      surface_like: surfaceLike,
+      transfer,
+      transfer_present: transferPresent,
+      // `null` means "legacy candidate, not judged"; `false` drops the card.
+      transfer_ok: transferPresent ? (z !== '' && transfer >= 4) : null,
     })
   }
   return { moves, bestIndex, comparison }
@@ -1012,6 +1070,8 @@ export function scoreMove(move) {
     + (move.over_obvious ? 0.2 : 0)
     + Math.min(1.2, countAnchors(move.text) * 0.4)
     + (move.insight ?? 5) * 0.2
+    // The transfer beat is the card's whole point; it outranks the rest.
+    + (move.transfer_present ? (move.transfer ?? 0) * 0.45 : 0)
     + (move.reply_ok === true ? 0.8 : 0)
     - (move.reply_ok === false ? 0.5 : 0)
 }
@@ -1024,7 +1084,13 @@ export function scoreMove(move) {
  */
 export function selectBestMove(selection, minScore = 5) {
   if (!Array.isArray(selection.moves) || selection.moves.length === 0) return null
-  const scored = selection.moves.map((move, index) => ({
+  // A card with no transferable relation is not a card: the four-beat contract
+  // is mandatory, not a bonus. Legacy candidates (no four-beat fields) pass.
+  const usable = selection.moves
+    .map((move, index) => ({ move, index }))
+    .filter(({ move }) => move.transfer_ok !== false)
+  if (usable.length === 0) return null
+  const scored = usable.map(({ move, index }) => ({
     ...move,
     index,
     score: scoreMove(move) + (selection.bestIndex === index ? 0.35 : 0),
@@ -1034,9 +1100,10 @@ export function selectBestMove(selection, minScore = 5) {
   const modelBest = selection.bestIndex === null ? null : scored.find(move => move.index === selection.bestIndex)
   const chosen = modelBest && modelBest.score >= top.score - 0.35 ? modelBest : top
   if (chosen.score < minScore) return null
-  const why = chosen.over_obvious && !chosen.why.includes(chosen.over_obvious)
-    ? clip(`${chosen.why}；${chosen.over_obvious}`, MAX_EXPERT_WHY)
-    : chosen.why
+  const baseWhy = chosen.why || chosen.y || ''
+  const why = chosen.over_obvious && !baseWhy.includes(chosen.over_obvious)
+    ? clip(`${baseWhy}；${chosen.over_obvious}`, MAX_EXPERT_WHY)
+    : baseWhy
   return {
     text: chosen.text,
     why,
@@ -1045,6 +1112,13 @@ export function selectBestMove(selection, minScore = 5) {
     intent: chosen.action,
     score: Number(chosen.score.toFixed(2)),
     comparison: selection.comparison,
+    // The four beats travel with the card; the client renders them in order.
+    x: chosen.x ?? '',
+    y: chosen.y ?? '',
+    z: chosen.z ?? '',
+    relation: chosen.relation ?? '',
+    falsify: chosen.falsify ?? '',
+    transfer: chosen.transfer_present ? chosen.transfer : null,
   }
 }
 
@@ -1716,9 +1790,9 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     if (rewritten && !findBannedPhrase(rewritten)) best.text = rewritten
     else best.text = cleanBannedPhrases(rewritten || best.text)
   }
-  // The card also shows why and risk; the rule covers every visible field.
+  // The card also shows the four beats; the rule covers every visible field.
   if (best) {
-    for (const field of ['why', 'risk']) {
+    for (const field of ['why', 'risk', 'x', 'y', 'z', 'falsify', 'relation']) {
       if (best[field] && findBannedPhrase(best[field])) best[field] = cleanBannedPhrases(best[field])
     }
   }

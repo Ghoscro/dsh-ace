@@ -888,9 +888,11 @@ test('the technical-grounding block is in both prompts and both locales', () => 
   const zh = buildExpertPrompt({ ...base, locale: 'zh-CN', mode: 'standard' }).user
   const en = buildExpertPrompt({ ...base, locale: 'en-US', mode: 'standard' }).user
   assert.match(zh, /\[TECH - 这张卡是一句能直接开工的下一轮 prompt\]/)
-  assert.match(zh, /至少点名一个文件、命令、参数、测试或验收标准/)
-  assert.match(en, /\[TECH - this card is a technical next prompt the user can send as-is\]/)
-  assert.match(en, /naming at least one concrete object/)
+  assert.match(zh, /至少带一个能验收的东西/)
+  assert.match(zh, /小白给一件他能亲眼确认的事/)
+  assert.match(en, /\[TECH - this card is a next prompt the user can send as-is\]/)
+  assert.match(en, /one checkable thing/)
+  assert.match(en, /non-engineers get something they can see for themselves/)
   assert.match(buildSingleMovePrompt({ ...base, locale: 'zh-CN', mode: 'wild' }).user, /\[TECH/)
 })
 
@@ -938,9 +940,76 @@ test('the insight block reaches both prompts', () => {
   const zh = buildExpertPrompt({ ...base, locale: 'zh-CN', mode: 'standard' }).user
   const en = buildExpertPrompt({ ...base, locale: 'en-US', mode: 'standard' }).user
   assert.match(zh, /\[INSIGHT - 用户自己想不到的那一层\]/)
-  assert.match(zh, /模块边界正在被穿过|结构性事实/)
+  assert.match(zh, /四拍/)
+  assert.match(zh, /transfer（0-10）：关系像（同一条因果线）是必须的/)
   assert.match(en, /\[INSIGHT - the layer the user would not have produced\]/)
-  assert.match(en, /structural fact/)
+  assert.match(en, /four beats/)
+  assert.match(en, /surface_like/)
+})
+
+test('transfer is parsed and a surface-unlike example without relation scores zero', () => {
+  const base = {
+    why: '测试里的重试会掩盖偶发失败', evidence: '', risk: '', action: 'advance',
+    value: 7, novelty: 6, worth_extra_step: 7, insight: 6,
+    text: '把重试去掉，只跑一次 x.test.ts',
+  }
+  const surface = parseExpertSelection(JSON.stringify({
+    ...base, x: '重试过了吗', y: '重试会掩盖偶发失败', z: '上次那个上传重试也是',
+    relation: '', surface_like: true, falsify: '去掉重试后一次就过', transfer: 9,
+  }), 5).moves[0]
+  assert.equal(surface.transfer, 9)
+  assert.equal(surface.transfer_ok, true)
+
+  const missing = parseExpertSelection(JSON.stringify({
+    ...base, x: '重试过了吗', y: '重试会掩盖偶发失败', z: '肿瘤放疗的分次照射',
+    relation: '', surface_like: false, falsify: '', transfer: 9,
+  }), 5).moves[0]
+  assert.equal(missing.transfer, 0)
+  assert.equal(missing.transfer_ok, false)
+
+  const mapped = parseExpertSelection(JSON.stringify({
+    ...base, x: '重试过了吗', y: '重试会掩盖偶发失败', z: '肿瘤放疗的分次照射',
+    relation: '都是把一个整体失败拆成多次小机会', surface_like: false, falsify: '', transfer: 8,
+  }), 5).moves[0]
+  assert.equal(mapped.transfer, 8)
+  assert.equal(mapped.transfer_ok, true)
+})
+
+test('a card whose transfer beat fails is never shown', () => {
+  const selection = parseExpertSelection(JSON.stringify({
+    text: '把重试去掉再跑一次 x.test.ts', why: '重试掩盖竞态', action: 'advance',
+    value: 9, novelty: 9, worth_extra_step: 9, insight: 9,
+    x: '重试过了吗', y: '重试掩盖偶发失败', z: '肿瘤放疗分次',
+    surface_like: false, relation: '', transfer: 9,
+  }), 5)
+  assert.equal(selection.moves.length, 1)
+  assert.equal(selectBestMove(selection, 5), null)
+})
+
+test('transfer outranks a mechanical step at similar value', () => {
+  const base = {
+    action: 'advance', value: 7, novelty: 5, worth_extra_step: 7,
+    evidence: '', over_obvious: '', text: '跑 pytest',
+  }
+  const mechanical = { ...base, insight: 2, transfer_present: true, transfer: 2, transfer_ok: true }
+  const transferable = {
+    ...base, text: '把重试去掉只跑一次', insight: 4,
+    transfer_present: true, transfer: 9, transfer_ok: true,
+  }
+  assert.ok(scoreMove(transferable) > scoreMove(mechanical) + 2)
+})
+
+test('the prompt asks for the four beats and the falsifier', () => {
+  const base = { transcript: [{ role: 'user', text: '界面又卡了' }], count: 4, mode: 'standard' }
+  const zh = buildExpertPrompt({ ...base, locale: 'zh-CN' }).user
+  assert.match(zh, /X 接住那个"一"/)
+  assert.match(zh, /Y 点出背后那条线/)
+  assert.match(zh, /Z 指出"三"在哪/)
+  assert.match(zh, /W 一个能验收的动作/)
+  assert.match(zh, /falsify/)
+  const en = buildExpertPrompt({ ...base, locale: 'en-US' }).user
+  assert.match(en, /catch the "one"/)
+  assert.match(en, /one concrete place the same line shows up again/)
 })
 
 test('a quoted reply must actually appear in the assistant message', () => {
@@ -1007,6 +1076,19 @@ test('the prompt carries a level block that matches the inferred level', () => {
   assert.match(buildExpertPrompt({ ...base, level: 'expert' }).user, /\[LEVEL - 这位用户是工程师\]/)
   assert.match(buildExpertPrompt({ ...base, level: 'working' }).user, /\[LEVEL - 这位用户能读技术内容/)
   assert.match(buildExpertPrompt({ ...base, locale: 'en-US', level: 'novice' }).user, /\[LEVEL - this user is not an engineer\]/)
+})
+
+test('the novice card asks for something visible, not a command', () => {
+  const prompt = buildExpertPrompt({
+    transcript: [{ role: 'user', text: '这个按钮老是点不动，我也不懂代码' }],
+    count: 4, locale: 'zh-CN', level: 'novice', mode: 'standard',
+  }).user
+  assert.match(prompt, /\[LEVEL - 这位用户不是工程师\]/)
+  // TECH still names a concrete object for engineers, but now accepts a visible
+  // check for everyone else. The 0.4.0 "must name a file or command" gate was
+  // the conflict the review flagged.
+  assert.match(prompt, /小白给一件他能亲眼确认的事/)
+  assert.match(prompt, /刷新一下，看右上角还报不报红/)
 })
 
 test('generation passes the inferred level into the real prompt', async () => {

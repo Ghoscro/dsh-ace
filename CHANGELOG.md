@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0 — 2026-10-19
+
+- The card is a four-beat "举一反三" instead of one smart next line: X restates
+  the concrete thing in the user's own words, Y names the relation behind it in
+  one human sentence, Z gives one other place the same relation shows up, and W
+  is the checkable action `Tab` fills. A card carries one new idea, not more
+  information.
+- New `transfer` score (0-10): a relation is mandatory. Surface-alike scores
+  8-10; surface-unlike scores 6-8 only when `relation` writes down how the
+  mapping works; surface-unlike with no `relation` scores 0. A candidate whose
+  transfer beat fails is dropped before selection, so a high `value` mechanical
+  step cannot win.
+- `falsify` makes the card testable: what result would prove it wrong.
+- The technical-grounding rule is relaxed from "name a file or command" to
+  "carry one checkable thing", so a non-engineer can get "refresh and look
+  whether the red badge is still there". A novice test locks it.
+- `why` falls back to the Y beat, so a four-beat answer without `why` is not
+  discarded.
+
 ## 0.4.0 — 2026-10-19
 
 - The card adapts to the user's technical level, inferred from their own

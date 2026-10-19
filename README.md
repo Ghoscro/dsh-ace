@@ -2,7 +2,7 @@
 
 **Beyond the obvious.**
 
-An AI next-move advisor for **DeepSeek Harness**. It reads the recent conversation, looks for a better next step than the one you would type by reflex, and shows **one** card. Press `Tab` to make it yours. Nothing is sent automatically.
+An AI next-move advisor for **DeepSeek Harness**. It reads the recent conversation and shows **one** card: it restates the thing you are answering, names the relation behind it, points at one other place that relation shows up, and ends with a checkable move. Press `Tab` to insert only that move; nothing is sent automatically.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Tests](https://github.com/Ghoscro/dsh-ace/actions/workflows/test.yml/badge.svg)](https://github.com/Ghoscro/dsh-ace/actions/workflows/test.yml)
@@ -13,7 +13,7 @@ An AI next-move advisor for **DeepSeek Harness**. It reads the recent conversati
 
 > Rendered example, not a recording. A real screen capture replaces it before the first release.
 
-**The difference, in one line:** autocomplete guesses what you *would* type; ACE guesses what is *worth sending* — and shows nothing when nothing wins.
+**The difference, in one line:** autocomplete guesses what you *would* type; ACE reorders something you already know until the reaction is "right, why didn't I see that" — and shows nothing when nothing wins.
 
 ## Install
 
@@ -21,7 +21,7 @@ The npm name `dsh-ace` is taken by an unrelated project, so the package is scope
 
 ```bash
 # in the DSH profile directory
-pnpm add file:/absolute/path/to/ghoscro-dsh-ace-0.4.0.tgz
+pnpm add file:/absolute/path/to/ghoscro-dsh-ace-0.5.0.tgz
 ```
 
 Then add `"@ghoscro/dsh-ace"` to `dsh.profile.bundles`, materialize the profile (DSH plugin page or `pnpm install`), and restart DSH. The composer row shows **✦ ACE** (**✦ 深度预测** in the Chinese UI).
@@ -30,17 +30,25 @@ Developer install (copy this directory into `sakura/packages/`) is at the end of
 
 ## What it does
 
-Most next-message tools optimize for **what you would probably type**. ACE optimizes for **what is worth sending next**.
+Most next-message tools optimize for **what you would probably type**. ACE optimizes for **whether this move is worth sending**, and whether it lets you see the next layer yourself.
 
-- It generates 3–5 different directions internally: advance, use an existing tool, reframe, verify, clarify, constrain, close.
-- It scores them for `value`, `novelty`, `worth_extra_step`, and action type.
+**The four-beat card:**
+
+> You just said X → the line behind it is Y → so Z will behave the same way → try W first; if you see such-and-such, I was wrong
+
+- **X** restates the concrete thing in your own words (usually the assistant line you are answering).
+- **Y** states the relation in one human sentence: why it works or fails. At most one abstraction.
+- **Z** gives one other place the same relation shows up. If it does not look alike on the surface, the card must say how the relation maps; if it cannot, this beat scores zero.
+- **W** is a checkable action for today: engineers get a file or command, everyone else gets something they can see ("refresh and look whether the badge is still red").
+- **Wrong if:** what result would prove the card wrong.
+
+- It generates 3–5 directions internally: advance, use an existing tool, reframe, verify, clarify, constrain, close.
+- It scores them for `value`, `novelty`, `worth_extra_step`, `transfer` (does the relation hold), and action type. A candidate that fails the transfer beat is not shown at all.
 - **Level:** the card reads the user's own messages and adapts — everyday language and one action at a time for non-engineers, shorthand and judgement for engineers. Override it with `level` in the plugin config.
-- The default mode predicts **the line you were about to type**: every card quotes the fragment of the assistant's last message it answers, and the scorer prefers cards that actually reply to it.
-- Every card has to carry an **insight the user would not have produced alone** — a boundary being crossed, a concept that should split, a failure mode common in this domain — and `insight` is scored separately from `novelty`.
-- Every card is also a technical next prompt: it names a file, command, flag, test, or acceptance check, and `why` states the inference that justifies it.
-- It shows **one** move, with `why`, `evidence`, and `risk`.
+- The default mode answers a specific line of the assistant's last message (`reply_to`, quoted verbatim), but picks the answer worth sending, not the smoothest one.
+- It shows **one** card, with X/Y/Z/W and its falsifier.
 - If nothing beats the obvious “continue”, it shows **nothing**. A quiet card is a feature.
-- `Tab` fills the draft. You can edit it. ACE never sends for you.
+- `Tab` inserts only W. You can edit it. ACE never sends for you.
 
 ## Demo
 
@@ -48,11 +56,9 @@ The card above is the intended loop:
 
 1. The assistant asks, “run the full suite?”
 2. The obvious next line is “run it”.
-3. ACE proposes: “remove the retry and run it once, to see whether the retry was masking the race.”
-4. The card shows why that is more informative, the evidence it used, and the risk.
-5. `Tab` inserts it; you decide whether to send.
-
-A real screen recording will replace the illustrative card after the first beta. The current image is a rendered example, not a benchmark result.
+3. The card: X “run the full suite?” → Y the retry swallows the flake, so a full run only spreads the odds → Z upload retries and CI flaky reruns are the same mechanism → W “remove the retry and run this one case once”.
+4. “Wrong if”: one clean run means the retry was not masking anything.
+5. `Tab` inserts only W; you decide whether to send.
 
 ## Quick start
 
@@ -112,8 +118,8 @@ The parser scans balanced JSON objects and skips a truncated or malformed line w
 - **Ledger:** each session keeps an append-only record of what the predictor saw; the prompt is rebuilt from it, so the prefix only grows, and past `ledgerMaxEntries` the oldest part is written to an archive file and replaced by a deterministic digest. `ledger: false` turns it off.
 - **Samples:** the last 50 expert predictions (candidate moves, the raw answer, the last user line) stay in `diagnostics/dsh-ace-samples.jsonl`; `npm run sweep` re-scores them offline at every threshold, with no model calls.
 - **Accounting:** every prediction appends one row to `diagnostics/dsh-ace-usage.jsonl` with the session, turn index, token counts, cache hits and a priced cost using the configurable `pricing` block.
-- **Cost:** one model call per ACE suggestion. At the default prices and a measured 2.4–3.0k-character prompt, one suggestion is roughly **$0.0003–0.001**; a prefix-cache hit cuts the input side by about 10x. The output caps are `safe` 2200, `standard` 4000, `brainstorm` 5600, `wild` 6000 tokens.
-- **What it costs you per turn:** automatic ACE is one call per completed turn; pause it and only the ✦ click costs anything. A token table with fast/expert and short/long contexts will be published before the first public release. Automatic ACE is the expensive mode; pause it if you only want it on demand.
+- **Cost:** one model call per ACE suggestion. At the default prices and a measured 4.3–4.8k-character prompt (0.4.0 was 2.4–3.0k), one suggestion is roughly **$0.0005–0.0015**; a prefix-cache hit cuts the input side by about 10x. The output caps are `safe` 2200, `standard` 4000, `brainstorm` 5600, `wild` 6000 tokens.
+- **What it costs you per turn:** automatic ACE is one call per completed turn; pause it and only the ✦ click costs anything. Automatic ACE is the expensive mode; pause it if you only want it on demand.
 
 ## Development
 

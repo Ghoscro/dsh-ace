@@ -23,8 +23,9 @@ function loadClient() {
       setItem(_key, value) { this.value = value },
     },
   }
+  const appended = []
   const document = {
-    head: { append: () => {} },
+    head: { append: element => appended.push(element) },
     createElement: () => ({ textContent: '', remove: () => {} }),
     querySelector: () => null,
   }
@@ -55,7 +56,7 @@ function loadClient() {
     if (name === 'react') return react
     throw new Error(`unexpected require: ${name}`)
   })
-  return { exports, document, window }
+  return { exports, document, window, appended }
 }
 
 test('client module exposes the cordis face and pure helpers', () => {
@@ -149,6 +150,34 @@ test('apply registers both composer slots and the locale dictionary', () => {
   assert.equal(dictionaries[0].dictionary.zh.mode_wild, '王牌预测')
   assert.equal(dictionaries[0].dictionary.en.mode_wild, 'ACE')
   assert.equal(dictionaries[0].dictionary.zh.mode_brainstorm, '脑暴思维')
+  assert.equal(dictionaries[0].dictionary.zh.beatX, '你刚说：')
+  assert.equal(dictionaries[0].dictionary.zh.beatZ, '还会：')
+  assert.equal(dictionaries[0].dictionary.en.beatZ, 'Also: ')
+  assert.equal(dictionaries[0].dictionary.zh.falsify, '错了会这样')
   effects.forEach(dispose => { if (typeof dispose === 'function') dispose() })
+})
+
+test('the card styles cover the four beats', () => {
+  const { exports, appended } = loadClient()
+  const ctx = {
+    effect(fn) {
+      fn()
+      return () => {}
+    },
+    locale: { register: () => () => {} },
+    slots: {
+      inject(_name, install) {
+        install()
+        return () => {}
+      },
+      register: () => () => {},
+    },
+    sessions: {},
+  }
+  exports.apply(ctx)
+  const css = appended.map(element => element.textContent).join('')
+  assert.match(css, /\.dcp-x\{/)
+  assert.match(css, /\.dcp-z\{/)
+  assert.match(css, /\.dcp-beat\{/)
 })
 

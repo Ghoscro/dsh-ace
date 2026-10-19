@@ -10,13 +10,14 @@ same acceptance question:
 
 - Context: a test fails intermittently; the assistant changed to fake timers and
   asks whether to run the full suite.
-- Reflex: “Run the full suite.”
-- ACE Move: “Remove the retry and run this test once; if it fails, the retry was
-  masking the race.”
-- Added value: tests the mechanism instead of increasing the sample size.
+- X (what you said): "run the full suite?" is the assistant's line.
+- Y (the line behind it): the retry swallows the flake, so a full run only
+  spreads the odds.
+- Z (where else it shows up): upload retries and CI flaky reruns are the same
+  mechanism — a hidden retry turning a real failure into a probability.
+- W (try this): "remove the retry and run this test once".
+- Wrong if: one clean run means the retry was not masking anything.
 - Risk: it may fail for an unrelated reason; keep the log.
-- Why it is not just “more risk”: it advances the diagnosis with one concrete
-  experiment.
 
 ## 2. Use the tool already on the machine
 
@@ -44,3 +45,6 @@ same acceptance question:
 3. At least one case per direction (advance, tool, reframe) is represented.
 4. Failures are kept in the report; the examples above are not presented as
    measured results.
+5. After reading a card, the reviewer can restate it in their own words **and**
+   name a second example of the same relation. If they cannot, the card is
+   showing off rather than transferring.

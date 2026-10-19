@@ -20,6 +20,7 @@ const zh = {
   card: '深度预测', ace: '深度预测',
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
   salvaged: '模型没按结构化格式返回，已把原文放进卡片',
+  beatX: '你刚说：', beatY: '背后：', beatZ: '还会：', falsify: '错了会这样', transfer: '举一反三',
   mode: '模式', mode_safe: '保守安全', mode_standard: '常规推理', mode_brainstorm: '脑暴思维', mode_wild: '王牌预测',
 }
 const en = {
@@ -34,6 +35,7 @@ const en = {
   card: 'ACE Move', ace: 'ACE',
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
   salvaged: 'The model did not return structured JSON; its raw answer is in the card',
+  beatX: 'You said: ', beatY: 'Behind it: ', beatZ: 'Also: ', falsify: 'Wrong if', transfer: 'Transfer',
   mode: 'Mode', mode_safe: 'Safe', mode_standard: 'Standard', mode_brainstorm: 'Brainstorm', mode_wild: 'ACE',
 }
 
@@ -267,13 +269,21 @@ function apply(ctx) {
         const candidates = rawCandidates.map(item => {
           if (typeof item === 'string') return item.trim() === '' ? null : { text: item.trim(), slot: '', why: '', evidence: '', risk: '', intent: '' }
           if (!item || typeof item !== 'object' || typeof item.text !== 'string' || item.text.trim() === '') return null
+          const str = key => typeof item[key] === 'string' ? item[key] : ''
           return {
             text: item.text.trim(),
-            slot: typeof item.slot === 'string' ? item.slot : '',
-            why: typeof item.why === 'string' ? item.why : '',
-            evidence: typeof item.evidence === 'string' ? item.evidence : '',
-            risk: typeof item.risk === 'string' ? item.risk : '',
-            intent: typeof item.intent === 'string' ? item.intent : '',
+            slot: str('slot'),
+            why: str('why'),
+            evidence: str('evidence'),
+            risk: str('risk'),
+            intent: str('intent'),
+            // Four-beat card: X, Y, Z, W(=text), plus the falsifier.
+            x: str('x'),
+            y: str('y'),
+            z: str('z'),
+            relation: str('relation'),
+            falsify: str('falsify'),
+            transfer: typeof item.transfer === 'number' ? item.transfer : null,
           }
         }).filter(Boolean).slice(0, count)
         if (candidates.length === 0) {
@@ -334,6 +344,9 @@ function apply(ctx) {
     '.dcp-body{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}',
     '.dcp-text{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere}',
     '.dcp-why{font-size:11px;line-height:1.35;opacity:.62;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-x{font-size:10.5px;line-height:1.3;opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.dcp-z{font-size:10.5px;line-height:1.35;opacity:.6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-beat{font-weight:600;opacity:.8;margin-right:2px}',
     '.dcp-meta{font-size:10px;line-height:1.3;opacity:.48;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.dcp-warning{font-size:11px;line-height:1.35;color:#b8860b;margin:2px 6px 0}',
     '.dcp-skeleton{height:12px;margin:7px 6px;border-radius:6px;background:linear-gradient(90deg,var(--dsw-specific-bubble,#ffffff0c),#ffffff18,var(--dsw-specific-bubble,#ffffff0c));background-size:200% 100%;animation:dcp-shimmer 1.4s linear infinite}',
@@ -538,11 +551,19 @@ function apply(ctx) {
     const textOf = item => typeof item === 'string' ? item : item && typeof item === 'object' ? String(item.text ?? '') : ''
     const rows = state.candidates.slice(0, 1).map((item, index) => {
       const text = textOf(item)
-      const why = item && typeof item === 'object' && typeof item.why === 'string' ? item.why : ''
-      const evidence = item && typeof item === 'object' && typeof item.evidence === 'string' ? item.evidence : ''
-      const risk = item && typeof item === 'object' && typeof item.risk === 'string' ? item.risk : ''
+      const field = key => item && typeof item === 'object' && typeof item[key] === 'string' ? item[key] : ''
+      const why = field('why')
+      const evidence = field('evidence')
+      const risk = field('risk')
+      const x = field('x')
+      const y = field('y')
+      const z = field('z')
+      const relation = field('relation')
+      const falsify = field('falsify')
+      // Four-beat cards replace why with a structured line, then add Z and W.
+      const line = y || why
       const meta = [
-        evidence ? `${t('evidence')}：${evidence}` : '',
+        falsify ? `${t('falsify')}：${falsify}` : '',
         risk ? `${t('risk')}：${risk}` : '',
       ].filter(Boolean).join(' · ')
       return React.createElement('button', {
@@ -555,8 +576,14 @@ function apply(ctx) {
       },
       React.createElement('span', { className: 'dcp-key' }, index === 0 ? 'Tab' : `Alt+${index + 1}`),
       React.createElement('span', { className: 'dcp-body' },
+        x ? React.createElement('span', { className: 'dcp-x' },
+          React.createElement('span', { className: 'dcp-beat' }, t('beatX')), x) : null,
+        line ? React.createElement('span', { className: 'dcp-why' },
+          y ? React.createElement('span', { className: 'dcp-beat' }, t('beatY')) : null, line) : null,
+        z ? React.createElement('span', { className: 'dcp-z' },
+          React.createElement('span', { className: 'dcp-beat' }, t('beatZ')), z,
+          relation ? `（${relation}）` : '') : null,
         React.createElement('span', { className: 'dcp-text' }, text),
-        why ? React.createElement('span', { className: 'dcp-why' }, why) : null,
         meta ? React.createElement('span', { className: 'dcp-meta' }, meta) : null))
     })
 
