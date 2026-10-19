@@ -8,7 +8,7 @@ import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
-  captureSample, countAnchors, findBannedPhrase, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
+  captureSample, countAnchors, findBannedPhrase, readProjectShape, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
   ACE_MODES,
 } from '../index.js'
 
@@ -892,4 +892,53 @@ test('the technical-grounding block is in both prompts and both locales', () => 
   assert.match(en, /\[TECH - this card is a technical next prompt the user can send as-is\]/)
   assert.match(en, /naming at least one concrete object/)
   assert.match(buildSingleMovePrompt({ ...base, locale: 'zh-CN', mode: 'wild' }).user, /\[TECH/)
+})
+
+test('the evidence pack carries project shape, not only a diff', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ace-shape-'))
+  mkdirSync(join(dir, 'src'), { recursive: true })
+  mkdirSync(join(dir, 'node_modules', 'left-pad'), { recursive: true })
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { react: '18' }, scripts: { test: 'node --test' } }))
+  writeFileSync(join(dir, 'src', 'index.js'), 'export const x = 1\n')
+  const shape = readProjectShape(dir)
+  assert.match(shape.tree, /src\//)
+  assert.doesNotMatch(shape.tree, /node_modules/)
+  assert.match(shape.deps, /react/)
+  assert.match(shape.deps, /test/)
+  const evidence = await collectEvidence(dir)
+  assert.match(evidence, /\[TREE\]/)
+  assert.match(evidence, /\[DEPS\]/)
+})
+
+test('a technical prompt longer than 90 characters is no longer dropped', () => {
+  const long = '把 x.test.ts 里包着 retry 的那层辅助函数整个删掉，只跑一次并发用例；如果它挂了，就说明重试一直在掩盖竞态，把日志和结论写进 notes/race.md 再决定下一步'
+  assert.ok(long.length > 90)
+  const selection = parseExpertSelection(JSON.stringify({
+    text: long, why: '测试里的重试会掩盖竞态', evidence: 'x.test.ts', risk: '可能暴露更多失败',
+    action: 'verify', value: 8, novelty: 7, worth_extra_step: 8, insight: 8, over_obvious: '验证机制而不是增加样本',
+  }), 5)
+  assert.equal(selection.moves.length, 1)
+  assert.equal(selection.moves[0].text, long)
+})
+
+test('insight is parsed and outranks mechanics at equal scores', () => {
+  const base = { action: 'advance', value: 7, novelty: 5, worth_extra_step: 7, evidence: '', over_obvious: '' }
+  const shallow = { ...base, text: '跑 npm test 看看', insight: 2 }
+  const deep = { ...base, text: '把 session 和 event 拆成两个模块，先跑 npm test 确认边界', insight: 9 }
+  assert.ok(scoreMove(deep) > scoreMove(shallow) + 0.8)
+  const selection = parseExpertSelection(JSON.stringify({
+    text: '把 session 和 event 拆开', why: '两者耦合让缓存失效', evidence: 'src/session.js', risk: '',
+    action: 'reframe', value: 6, novelty: 8, worth_extra_step: 6, insight: 9,
+  }), 5)
+  assert.equal(selection.moves[0].insight, 9)
+})
+
+test('the insight block reaches both prompts', () => {
+  const base = { transcript: [{ role: 'user', text: '这个模块越来越乱' }], count: 4 }
+  const zh = buildExpertPrompt({ ...base, locale: 'zh-CN', mode: 'standard' }).user
+  const en = buildExpertPrompt({ ...base, locale: 'en-US', mode: 'standard' }).user
+  assert.match(zh, /\[INSIGHT - 用户自己想不到的那一层\]/)
+  assert.match(zh, /模块边界正在被穿过|结构性事实/)
+  assert.match(en, /\[INSIGHT - the layer the user would not have produced\]/)
+  assert.match(en, /structural fact/)
 })

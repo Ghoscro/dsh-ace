@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Cards must carry an architectural or domain insight (`insight` 0-10, scored
+  separately): boundary erosion, concepts that should split, known failure
+  modes, cost curves. Mechanical steps score at most 3 unless they expose a
+  structural conclusion.
+- The evidence pack now includes the project tree and dependency/script names,
+  so an architectural claim can be grounded in real structure instead of only a
+  git diff. Card text may be up to 600 characters (was 90).
 - Every card is now grounded as a technical next prompt: the prompt asks for a
   named file, command, flag, test or acceptance check plus the inference behind
   it, and the scorer gives concrete steps a small bonus over vague prose.

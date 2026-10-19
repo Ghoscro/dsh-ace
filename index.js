@@ -11,7 +11,7 @@
  */
 
 import { execFile } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { ingestLedger } from './ledger.js'
 
@@ -26,7 +26,7 @@ const MAX_BODY_BYTES = 256 * 1024
 const MAX_MESSAGES = 16
 const MAX_TOTAL_CHARS = 14_000
 const MAX_CANDIDATE_CHARS = 160
-const MAX_EXPERT_TEXT = 90
+const MAX_EXPERT_TEXT = 600
 const MAX_EXPERT_WHY = 160
 const MAX_EXPERT_EVIDENCE = 240
 const MAX_EXPERT_RISK = 160
@@ -113,7 +113,7 @@ const ZH_EXPERT = `你是用户的专家级 next-move 顾问。不要猜最可�
 
 输出格式：每行一个 JSON 对象，不要数组、不要逗号分隔、不要 markdown、不要代码围栏。
 前 3-5 行是候选，每行：
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"over_obvious":"..."}
+{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"over_obvious":"..."}
 最后一行是选择：
 {"best_index":0,"comparison":"为什么选它，其他方向差在哪"}
 
@@ -132,7 +132,7 @@ Directions include: advance the next step, use an existing tool or a cheaper pat
 
 Output format: one JSON object per line. No array, no comma-separated list, no markdown, no code fences.
 The first 3-5 lines are candidates:
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"over_obvious":"..."}
+{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"over_obvious":"..."}
 The final line is the selection:
 {"best_index":0,"comparison":"why this one, and why the others are weaker"}
 
@@ -293,6 +293,42 @@ function runGit(cwd, args, timeoutMs, maxBuffer = 256 * 1024) {
  * @param {string} cwd - workspace directory from the session.
  * @returns {Promise<string>} bounded evidence sections.
  */
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.venv', 'vendor', 'coverage', '.cache', 'target'])
+
+/**
+ * Read the shape of a project: top-level entries and dependency/script names.
+ * Architecture advice needs structure, not just a diff.
+ * @param {string} cwd - project directory.
+ * @returns {{tree: string, deps: string}} bounded shape strings.
+ */
+export function readProjectShape(cwd) {
+  const entries = []
+  try {
+    for (const entry of readdirSync(cwd, { withFileTypes: true })) {
+      if (entries.length >= 40) break
+      if (entry.name.startsWith('.') && entry.name !== '.github') continue
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue
+        entries.push(`${entry.name}/`)
+      } else {
+        entries.push(entry.name)
+      }
+    }
+  } catch {
+    // A missing permission is not an error worth surfacing.
+  }
+  let deps = ''
+  try {
+    const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8'))
+    const names = [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})]
+    const scripts = Object.keys(pkg.scripts ?? {})
+    deps = `deps: ${names.slice(0, 25).join(', ') || '(none)'}\nscripts: ${scripts.slice(0, 12).join(', ') || '(none)'}`
+  } catch {
+    // No package.json, or not JSON: the tree still carries signal.
+  }
+  return { tree: entries.join('\n'), deps }
+}
+
 export async function collectEvidence(cwd) {
   if (typeof cwd !== 'string' || cwd.trim() === '') return '(none)'
   try {
@@ -308,6 +344,9 @@ export async function collectEvidence(cwd) {
     runGit(cwd, ['diff', '--unified=1', '--no-color'], 2500, 512 * 1024),
   ])
   const parts = []
+  const shape = readProjectShape(cwd)
+  if (shape.tree !== '') parts.push(`[TREE]\n${clip(shape.tree, 1200)}`)
+  if (shape.deps !== '') parts.push(`[DEPS]\n${clip(shape.deps, 800)}`)
   if (status.trim() !== '') parts.push(`[STATUS]\n${clip(status, 2000)}`)
   if (stat.trim() !== '') parts.push(`[DIFF STAT]\n${clip(stat, 2000)}`)
   if (staged.trim() !== '') parts.push(`[STAGED]\n${clip(staged, 2000)}`)
@@ -569,6 +608,21 @@ export function cleanBannedPhrases(text) {
 
 const voiceBlock = locale => (locale.startsWith('zh') ? VOICE_ZH : VOICE_EN)
 
+/** The card should carry an insight the user would not have produced alone. */
+const INSIGHT_ZH = `[INSIGHT - 用户自己想不到的那一层]
+- 这张卡的价值不在"下一步做点什么"，而在用户自己不会想到的那个结构性事实：模块边界正在被穿过、两个概念其实该拆开、这个改动会锁死下次迁移、这个失败模式在领域里很常见、这条路径的成本是幂增的。
+- 每条候选必须写 insight（0-10）：它说出了什么用户没意识到的架构或领域知识。只是"跑个测试、加个日志、改个名字"的 insight 不超过 3，除非它顺带揭示了一个结构性结论。
+- insight 必须落在真实存在的对象上：模块、文件、依赖、接口、数据形状、失败路径。引用 package.json 里的依赖、目录结构或 diff 里的符号，不要泛泛谈"可维护性"。
+- text 仍然是一句能直接发出去的指令，但它执行的是这个洞见，而不是一个机械动作。`
+
+const INSIGHT_EN = `[INSIGHT - the layer the user would not have produced]
+- The card's value is not "some next step": it is a structural fact the user has not seen. A module boundary being crossed, two concepts that should be split, a change that locks the next migration, a failure mode common in this domain, a cost curve that compounds.
+- Every candidate scores insight 0-10: what architecture or domain knowledge does it surface that the user missed? "Run a test, add a log, rename a thing" is at most 3 unless it also exposes a structural conclusion.
+- The insight must land on real objects: modules, files, dependencies, interfaces, data shapes, failure paths. Cite a dependency in package.json, a directory in the tree, or a symbol in the diff; do not wave at "maintainability".
+- text is still a prompt the user can send as-is, but it executes the insight instead of a mechanical step.`
+
+const insightBlock = locale => (locale.startsWith('zh') ? INSIGHT_ZH : INSIGHT_EN)
+
 /** Every card is a technical next prompt, not a vibe. Static so it caches. */
 const TECH_ZH = `[TECH - 这张卡是一句能直接开工的下一轮 prompt]
 - text 必须是一句可以直接发出去的技术指令：至少点名一个文件、命令、参数、测试或验收标准。不要"优化一下""再看看""继续推进"这种空话。
@@ -682,7 +736,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -708,7 +762,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
   }
 }
 
@@ -814,6 +868,7 @@ export function parseExpertSelection(text, count = 5) {
       value: normalizeScore(object.value),
       novelty: normalizeScore(object.novelty),
       worth_extra_step: normalizeScore(object.worth_extra_step ?? object.worth),
+      insight: normalizeScore(object.insight),
       slot: typeof object.slot === 'string' ? object.slot : '',
     })
   }
@@ -879,6 +934,7 @@ export function scoreMove(move) {
     + (move.evidence ? 0.2 : 0)
     + (move.over_obvious ? 0.2 : 0)
     + Math.min(1.2, countAnchors(move.text) * 0.4)
+    + (move.insight ?? 5) * 0.2
 }
 
 /**
@@ -1077,6 +1133,7 @@ export function captureSample(sample, options = {}) {
         value: Number(move?.value) || 0,
         novelty: Number(move?.novelty) || 0,
         worth_extra_step: Number(move?.worth_extra_step) || 0,
+        insight: Number(move?.insight) || 0,
         slot: move?.slot ?? '',
       })) : [],
     }
