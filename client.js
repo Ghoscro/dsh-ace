@@ -5,6 +5,9 @@ const { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore 
 const NS = 'dsh-ace'
 const SETTINGS_KEY = 'dsh.composer-predict.settings.v1'
 const ROUTE = '/composer-predict/predict'
+/* Build-time version literal. install-version.test.ts fails the suite when this
+   drifts from package.json or from what the desktop profile actually installed. */
+const ACE_VERSION = '0.5.0'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -254,6 +257,11 @@ function applyComposerInsets() {
 }
 
 function apply(ctx) {
+  // Surface the loaded build on <html data-ace-version> so the version can be
+  // checked from the DOM instead of guessed from the UI.
+  try {
+    if (document?.documentElement?.dataset) document.documentElement.dataset.aceVersion = ACE_VERSION
+  } catch { /* a non-DOM host simply has no marker */ }
   const stores = new Map()
   const faces = new Map()
   let settings = readSettings()
