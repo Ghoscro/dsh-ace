@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-19
 
 - Fixed: the host half is a single file again. Adding a sibling module
   (`ledger.js`) broke the pnpm-materialized copy, which hard-links existing files
