@@ -11,7 +11,7 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.12'
+const ACE_VERSION = '0.5.13'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -620,7 +620,7 @@ function apply(ctx) {
 
       const paint = draft => {
         const element = textareaOf()
-        if (!element || !completion) return hide()
+        if (!element) return hide()
         // Only paint behind a caret that sits at the end of the draft: a ghost
         // in the middle of the text would cover what the user already wrote.
         if (element.selectionStart !== element.value.length || element.value !== draft) return hide()
@@ -630,9 +630,7 @@ function apply(ctx) {
           layer.setAttribute('aria-hidden', 'true')
           document.body.appendChild(layer)
         }
-        if (!expanded) {
-          // Collapsed: only a 9px white "Alt" hint in the corner. The ghost
-          // text itself stays hidden until Alt expands it.
+        const corner = () => {
           const rect = element.getBoundingClientRect()
           layer.style.left = `${Math.max(0, rect.right - 36)}px`
           layer.style.top = `${Math.max(0, rect.bottom - 18)}px`
@@ -642,12 +640,24 @@ function apply(ctx) {
           layer.style.font = ''
           layer.style.lineHeight = ''
           layer.style.letterSpacing = ''
-          const hint = document.createElement('span')
-          hint.className = 'dcp-ghost-hint'
-          hint.textContent = 'F1'
-          layer.replaceChildren(hint)
+        }
+        const hint = text => {
+          corner()
+          const span = document.createElement('span')
+          span.className = 'dcp-ghost-hint'
+          span.textContent = text
+          layer.replaceChildren(span)
           layer.style.display = 'block'
-          return
+        }
+        if (!completion) {
+          // Expanded with nothing yet: show a waiting dot so the keypress is
+          // visibly received instead of looking broken.
+          if (expanded) return hint('…')
+          return hide()
+        }
+        if (!expanded) {
+          // Collapsed: only the 9px white key hint in the corner.
+          return hint('F1')
         }
         place(element)
         layer.style.display = 'block'
@@ -775,7 +785,7 @@ function apply(ctx) {
             event.preventDefault()
             event.stopPropagation()
             expanded = !expanded
-            if (completion) paint(element.value)
+            paint(element.value)
             return
           }
         }

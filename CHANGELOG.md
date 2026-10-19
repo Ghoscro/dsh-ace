@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.13 — 2026-10-19
+
+- The local model gains a unigram fallback (an unseen pair still emits a
+  character), and its corpus strips CJK quotes that were teaching `」，`.
+- The stream route no longer answers an empty `done`: when the model emits no
+  text it reports `reasoningChars` and the finish reason, and the inline budget
+  goes from 400 to 1200 tokens.
+- F1 with no completion shows a `…` hint, so a silent keypress can no longer be
+  confused with a broken binding.
+
 ## 0.5.12 — 2026-10-19
 
 - The ghost toggle is now `F1` (was backquote). The handler runs in capture

@@ -984,12 +984,13 @@ function buildLocalModel() {
       return null
     }
     const next = new Map()
+    const single = new Map()
     for (const raw of messages) {
       // Code blocks, URLs and quoted payloads teach the wrong next character.
       const text = raw
         .replace(/```[\s\S]*?```/g, ' ')
         .replace(/https?:\/\/\S+/g, ' ')
-        .replace(/["'`]/g, '')
+        .replace(/[「」『』“”‘’"'`]/g, '')
         .trim()
       const chinese = (text.match(/[\u4e00-\u9fa5]/g) ?? []).length
       if (chinese / Math.max(1, text.length) < 0.5) continue
@@ -1003,10 +1004,19 @@ function buildLocalModel() {
           next.set(context, bag)
         }
         bag.set(char, (bag.get(char) ?? 0) + 1)
+        // Unigram fallback: an unseen pair still has a most likely next char.
+        const one = padded[index - 1]
+        let singleBag = single.get(one)
+        if (!singleBag) {
+          singleBag = new Map()
+          single.set(one, singleBag)
+        }
+        singleBag.set(char, (singleBag.get(char) ?? 0) + 1)
       }
     }
     localModel.built = true
     localModel.next = next
+    localModel.single = single
     localModel.messages = messages.length
     localModel.contexts = next.size
     return next
@@ -1027,10 +1037,18 @@ function buildLocalModel() {
 export function predictLocal(draft, maxChars = 2) {
   const table = buildLocalModel()
   if (!table) return ''
+  const singleTable = localModel.single
   let context = ('\u0002\u0002' + String(draft ?? '').replace(/\s+/g, '')).slice(-2)
   let out = ''
   for (let step = 0; step < maxChars; step += 1) {
-    const bag = table.get(context)
+    let bag = table.get(context)
+    let threshold = 0.35
+    if (!bag && singleTable) {
+      // Fall back to one character of context: a rare pair should still emit
+      // something short rather than nothing.
+      bag = singleTable.get(context.slice(-1))
+      threshold = 0.2
+    }
     if (!bag) break
     let best = ''
     let bestCount = 0
@@ -1043,7 +1061,7 @@ export function predictLocal(draft, maxChars = 2) {
       }
     }
     // Low confidence reads as noise: say nothing instead of guessing badly.
-    if (best === '' || best === '\u0003' || bestCount / Math.max(1, total) < 0.35) break
+    if (best === '' || best === '\u0003' || bestCount / Math.max(1, total) < threshold) break
     out += best
     context = (context + best).slice(-2)
   }
@@ -2142,19 +2160,30 @@ export async function streamInlineCompletion(ctx, config, input, onDelta, signal
     system: prompt.system,
     messages: [{ role: 'user', content: [{ type: 'text', text: prompt.user }], source: { kind: 'user' } }],
     temperature: 0.5,
-    maxTokens: 400,
+    maxTokens: 1200,
     reasoningEffort: 'none',
     signal,
   })
   const iterator = iterable[Symbol.asyncIterator]()
   let output = ''
   let sent = 0
+  let finishKind = ''
+  let reasoningChars = 0
   try {
     while (true) {
       const next = await iterator.next()
       if (next.done) break
       const chunk = next.value
-      if (!chunk || chunk.type !== 'text-delta' || typeof chunk.text !== 'string') continue
+      if (!chunk) continue
+      if (chunk.type === 'reasoning-delta' && typeof chunk.text === 'string') {
+        reasoningChars += chunk.text.length
+        continue
+      }
+      if (chunk.type === 'finish' && chunk.reason) {
+        finishKind = String(chunk.reason.kind ?? '')
+        continue
+      }
+      if (chunk.type !== 'text-delta' || typeof chunk.text !== 'string') continue
       output += chunk.text
       const clean = cleanInline(output, input.draft)
       // cleanInline can shorten the tail while a token is half-written; only
@@ -2166,6 +2195,11 @@ export async function streamInlineCompletion(ctx, config, input, onDelta, signal
     }
   } finally {
     if (typeof iterator.return === 'function') void Promise.resolve(iterator.return()).catch(() => {})
+  }
+  if (output.trim() === '') {
+    // Surface the same diagnosis the batch route reports: a reasoning model
+    // that spends the whole budget produces no text at all.
+    throw new Error(`inline produced no text (reasoningChars=${reasoningChars}, finish=${finishKind || 'none'})`)
   }
   return cleanInline(output, input.draft)
 }
