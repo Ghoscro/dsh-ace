@@ -7,10 +7,11 @@ const SETTINGS_KEY = 'dsh.composer-predict.settings.v1'
 const ROUTE = '/composer-predict/predict'
 const REJECT_ROUTE = '/composer-predict/reject'
 const INLINE_ROUTE = '/composer-predict/inline'
+const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.8'
+const ACE_VERSION = '0.5.9'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -672,22 +673,47 @@ function apply(ctx) {
         if (modelController) modelController.abort()
         modelController = typeof AbortController !== 'undefined' ? new AbortController() : null
         const started = Date.now()
-        fetch(INLINE_ROUTE, {
+        fetch(STREAM_ROUTE, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             draft,
             transcript: face ? face.readTranscript() : [],
             sessionId,
-            // When the model is slow, ask for less: short beats late.
-            maxChars: lastLatency > 1500 ? 4 : 10,
           }),
           signal: modelController ? modelController.signal : undefined,
-        }).then(response => response.json()).then(payload => {
-          if (id !== modelSeq) return
-          lastLatency = Date.now() - started
-          const next = typeof payload?.value?.completion === 'string' ? payload.value.completion.trim() : ''
-          if (next) remember(draft, next)
+        }).then(async response => {
+          if (!response.body) return
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            let cut = buffer.indexOf('\n\n')
+            while (cut !== -1) {
+              const raw = buffer.slice(0, cut)
+              buffer = buffer.slice(cut + 2)
+              cut = buffer.indexOf('\n\n')
+              const line = raw.split('\n').find(part => part.startsWith('data: '))
+              if (!line) continue
+              let payload = null
+              try {
+                payload = JSON.parse(line.slice(6))
+              } catch {
+                continue
+              }
+              if (id !== modelSeq) return
+              // Every delta extends the same ghost: the local guess is replaced
+              // by the first model token and then grows in place.
+              if (typeof payload.full === 'string' && payload.full !== '') {
+                lastLatency = Date.now() - started
+                completion = payload.full
+                paint(draft)
+              }
+            }
+          }
         }).catch(() => {})
       }
 

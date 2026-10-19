@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.9 — 2026-10-19
+
+- Ghost text streams. The host forwards every model text delta over SSE
+  (`/composer-predict/stream`); the browser extends the same ghost in place.
+  The local guess appears first, then the model's sentence replaces it and grows
+  token by token instead of appearing whole.
+- If the model returns nothing, the local tail stays on screen: the ghost never
+  goes from something to nothing.
+
 ## 0.5.8 — 2026-10-19
 
 - Fix: a truncated JSON answer shipped as a card (`{"text":"...` 77 chars). The

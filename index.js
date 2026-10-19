@@ -2123,6 +2123,53 @@ async function rewriteWithoutBanned(ctx, route, config, input, text, signal) {
  * @param {AbortSignal} signal - cancellation.
  * @returns {Promise<{completion: string, model: string, usage: object|null}>} completion.
  */
+/**
+ * Stream the missing tail: every text delta is forwarded as it arrives, so the
+ * browser can grow the ghost instead of replacing it once.
+ * @param {import('@deepseek-ai/cordis').Context} ctx - host context.
+ * @param {ReturnType<typeof normalizeConfig>} config - plugin config.
+ * @param {{draft: string, transcript?: object[], locale?: string}} input - request data.
+ * @param {(delta: string, full: string) => void} onDelta - called with each new tail.
+ * @param {AbortSignal} signal - cancellation.
+ * @returns {Promise<string>} the full completion.
+ */
+export async function streamInlineCompletion(ctx, config, input, onDelta, signal) {
+  const route = resolveModel(ctx, config)
+  const prompt = buildInlinePrompt({ ...input, profile: readUserProfile() })
+  const iterable = ctx.llm.stream({
+    provider: route.provider,
+    model: route.model,
+    system: prompt.system,
+    messages: [{ role: 'user', content: [{ type: 'text', text: prompt.user }], source: { kind: 'user' } }],
+    temperature: 0.5,
+    maxTokens: 400,
+    reasoningEffort: 'none',
+    signal,
+  })
+  const iterator = iterable[Symbol.asyncIterator]()
+  let output = ''
+  let sent = 0
+  try {
+    while (true) {
+      const next = await iterator.next()
+      if (next.done) break
+      const chunk = next.value
+      if (!chunk || chunk.type !== 'text-delta' || typeof chunk.text !== 'string') continue
+      output += chunk.text
+      const clean = cleanInline(output, input.draft)
+      // cleanInline can shorten the tail while a token is half-written; only
+      // ever extend the ghost, never make it jump backwards.
+      if (clean.length > sent) {
+        onDelta(clean.slice(sent), clean)
+        sent = clean.length
+      }
+    }
+  } finally {
+    if (typeof iterator.return === 'function') void Promise.resolve(iterator.return()).catch(() => {})
+  }
+  return cleanInline(output, input.draft)
+}
+
 export async function generateInlineCompletion(ctx, config, input, signal) {
   const route = resolveModel(ctx, config)
   const prompt = buildInlinePrompt({ ...input, profile: readUserProfile() })
@@ -2386,6 +2433,58 @@ export async function handleRequest(ctx, config, inflight, req, res) {
       sessionId: typeof payload.sessionId === 'string' ? payload.sessionId.slice(0, 200) : 'anonymous',
     })
     sendJson(res, 200, { ok: true, value: { written } })
+    return
+  }
+  if (url.pathname === `${config.routePrefix}/stream`) {
+    // Sentence-level streaming: the browser grows the ghost delta by delta.
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: { code: 'method-not-allowed', message: 'POST required' } })
+      return
+    }
+    let body
+    try {
+      body = await readJsonBody(req, config.maxBodyBytes)
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: { code: 'bad-request', message: String(error?.message ?? error) } })
+      return
+    }
+    const payload = body && typeof body === 'object' ? body : {}
+    const draft = typeof payload.draft === 'string' ? payload.draft.slice(0, 500) : ''
+    if (draft.trim() === '') {
+      sendJson(res, 200, { ok: true, value: { completion: '' } })
+      return
+    }
+    res.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+    })
+    const send = (event, data) => {
+      if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    }
+    const controller = new AbortController()
+    const onClose = () => controller.abort(new Error('stream closed'))
+    req.on('close', onClose)
+    try {
+      const transcript = sanitizeTranscript(payload.transcript, config)
+      const completion = await streamInlineCompletion(
+        ctx,
+        config,
+        {
+          draft,
+          transcript,
+          locale: typeof payload.locale === 'string' ? payload.locale.slice(0, 40) : 'zh-CN',
+        },
+        (delta, full) => send('delta', { delta, full }),
+        controller.signal,
+      )
+      send('done', { completion })
+    } catch (error) {
+      send('error', { message: String(error?.message ?? error).slice(0, 200) })
+    } finally {
+      req.off('close', onClose)
+      if (!res.writableEnded) res.end()
+    }
     return
   }
   if (url.pathname === `${config.routePrefix}/local`) {
