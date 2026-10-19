@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.6 — 2026-10-19
+
+- Ghost text is prefetched while typing instead of after a three-second pause: a
+  local character model from the user's own messages answers in milliseconds,
+  and the model call replaces it as soon as it lands. A cached tail stays
+  hanging while the draft only grows past it.
+- `POST /composer-predict/local` returns 1-3 characters from the local 2-gram
+  (Chinese-dominant messages only, low-confidence branches return nothing).
+  `inline` accepts `maxChars`: 4 after a slow call, 10 after a fast one, so
+  short beats late.
+
 ## 0.5.5 — 2026-10-19
 
 - Ghost text instead of a whole card: stop typing for three seconds and ACE asks

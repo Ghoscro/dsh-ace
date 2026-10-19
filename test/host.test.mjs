@@ -8,7 +8,7 @@ import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
-  buildInlinePrompt, cleanInline,
+  buildInlinePrompt, cleanInline, predictLocal,
   captureSample, countAnchors, estimateLevel, findBannedPhrase, judgeRelation, readProjectShape, readUserProfile, repliesTo, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
   appendReject, readRecentRejects, rejectsBlock,
   ACE_MODES,
@@ -1113,6 +1113,13 @@ test('the inline prompt asks for the tail only', () => {
   const prompt = buildInlinePrompt({ draft: '这个功能先', transcript: [{ role: 'user', text: '在改 ACE' }], locale: 'zh-CN' })
   assert.match(prompt.system, /补完后半句/)
   assert.match(prompt.user, /\[DRAFT\]\n这个功能先/)
+})
+
+test('local prediction never throws without a corpus', () => {
+  // The test DSH_HOME has no sessions; local completion degrades to empty
+  // instead of breaking the route (the model call is still there).
+  assert.equal(predictLocal('这个功能先', 3), '')
+  assert.equal(predictLocal('', 3), '')
 })
 
 test('a quoted reply must actually appear in the assistant message', () => {

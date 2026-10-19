@@ -7,9 +7,10 @@ const SETTINGS_KEY = 'dsh.composer-predict.settings.v1'
 const ROUTE = '/composer-predict/predict'
 const REJECT_ROUTE = '/composer-predict/reject'
 const INLINE_ROUTE = '/composer-predict/inline'
+const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.5'
+const ACE_VERSION = '0.5.6'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -591,8 +592,6 @@ function apply(ctx) {
       if (typeof document === 'undefined') return undefined
       const textareaOf = () => document.querySelector('[data-composer-card] textarea')
       let layer = null
-      let timer = 0
-      let seq = 0
       let completion = ''
 
       const hide = () => {
@@ -639,26 +638,77 @@ function apply(ctx) {
         layer.scrollTop = element.scrollTop
       }
 
-      const ask = draft => {
-        const id = ++seq
+      let cached = { draft: '', completion: '' }
+      let modelSeq = 0
+      let localSeq = 0
+      let localTimer = 0
+      let modelTimer = 0
+      let modelController = null
+      let lastLatency = 0
+
+      const remember = (draft, next) => {
+        if (!next) return
+        cached = { draft, completion: next }
+        completion = next
+        paint(draft)
+      }
+
+      const askLocal = draft => {
+        const id = ++localSeq
+        fetch(LOCAL_ROUTE, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ draft, maxChars: 3 }),
+        }).then(response => response.json()).then(payload => {
+          // The model answer wins when it lands first; local only fills the gap.
+          if (id !== localSeq || completion) return
+          const next = typeof payload?.value?.completion === 'string' ? payload.value.completion.trim() : ''
+          if (next) remember(draft, next)
+        }).catch(() => {})
+      }
+
+      const askModel = draft => {
+        const id = ++modelSeq
+        if (modelController) modelController.abort()
+        modelController = typeof AbortController !== 'undefined' ? new AbortController() : null
+        const started = Date.now()
         fetch(INLINE_ROUTE, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ draft, transcript: face ? face.readTranscript() : [], sessionId }),
+          body: JSON.stringify({
+            draft,
+            transcript: face ? face.readTranscript() : [],
+            sessionId,
+            // When the model is slow, ask for less: short beats late.
+            maxChars: lastLatency > 1500 ? 4 : 10,
+          }),
+          signal: modelController ? modelController.signal : undefined,
         }).then(response => response.json()).then(payload => {
-          if (id !== seq) return
+          if (id !== modelSeq) return
+          lastLatency = Date.now() - started
           const next = typeof payload?.value?.completion === 'string' ? payload.value.completion.trim() : ''
-          if (!next) return hide()
-          completion = next
-          paint(draft)
-        }).catch(hide)
+          if (next) remember(draft, next)
+        }).catch(() => {})
       }
 
       const schedule = draft => {
-        window.clearTimeout(timer)
-        hide()
-        if (!draft.trim()) return
-        timer = window.setTimeout(() => ask(draft), 3000)
+        window.clearTimeout(localTimer)
+        window.clearTimeout(modelTimer)
+        if (!draft.trim()) return hide()
+        // A cached tail stays valid while the draft only grows past it: the
+        // user keeps typing and the ghost keeps hanging behind the caret.
+        if (cached.completion && draft.startsWith(cached.draft)) {
+          const tail = cached.completion.slice(draft.length - cached.draft.length)
+          if (tail) {
+            completion = tail
+            paint(draft)
+            return
+          }
+        }
+        completion = ''
+        if (layer) layer.style.display = 'none'
+        localTimer = window.setTimeout(() => askLocal(draft), 60)
+        modelTimer = window.setTimeout(() => askModel(draft), 140)
       }
 
       const onInput = event => {
@@ -692,7 +742,9 @@ function apply(ctx) {
       document.addEventListener('focusout', onFocusOut, true)
       window.addEventListener('resize', hide)
       return () => {
-        window.clearTimeout(timer)
+        window.clearTimeout(localTimer)
+        window.clearTimeout(modelTimer)
+        if (modelController) modelController.abort()
         document.removeEventListener('input', onInput, true)
         document.removeEventListener('keydown', onKeyDown, true)
         document.removeEventListener('focusout', onFocusOut, true)

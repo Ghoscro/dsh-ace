@@ -13,6 +13,7 @@
 import { execFile } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { zstdDecompressSync } from 'node:zlib'
 
 /** Public plugin name used by Cordis. */
 export const name = 'dsh-ace'
@@ -886,6 +887,152 @@ export function rejectsBlock(limit = 5) {
   return rows
     .map(row => `- 毙掉：${clip(String(row.text ?? ''), 160)} ｜ 原因：${clip(String(row.reason ?? ''), 60) || '没说到点上'}`)
     .join('\n')
+}
+
+/** Local character model: instant ghost text while the model call is in flight. */
+const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
+const localModel = { built: false, next: null }
+
+function decodeSessionFrames(buffer) {
+  const starts = []
+  let index = 0
+  while ((index = buffer.indexOf(ZSTD_MAGIC, index)) !== -1) {
+    starts.push(index)
+    index += 4
+  }
+  if (starts.length === 0) return buffer.toString('utf8')
+  let text = ''
+  for (let frame = 0; frame < starts.length; frame += 1) {
+    const end = frame + 1 < starts.length ? starts[frame + 1] : buffer.length
+    try {
+      text += zstdDecompressSync(buffer.subarray(starts[frame], end)).toString('utf8')
+    } catch {
+      // A false magic hit inside payload data: skip that frame only.
+    }
+  }
+  return text
+}
+
+function humanMessages(home, limitFiles = 300) {
+  const files = []
+  const walk = (directory, depth) => {
+    if (depth > 3) return
+    let entries
+    try {
+      entries = readdirSync(directory, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        walk(path, depth + 1)
+      } else if (entry.isFile() && /session(\.v\d+)?\.jsonl(\.zstd)?$/.test(entry.name)) {
+        try {
+          files.push({ path, mtime: statSync(path).mtimeMs })
+        } catch {
+          // Raced with cleanup; skip.
+        }
+      }
+    }
+  }
+  walk(join(home, 'sessions'), 0)
+  files.sort((left, right) => right.mtime - left.mtime)
+  const out = []
+  for (const file of files.slice(0, limitFiles)) {
+    let raw
+    try {
+      raw = readFileSync(file.path)
+    } catch {
+      continue
+    }
+    const text = file.path.endsWith('.zstd') ? decodeSessionFrames(raw) : raw.toString('utf8')
+    for (const line of text.split('\n')) {
+      if (!line) continue
+      let object
+      try {
+        object = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (object?.type !== 'user/message') continue
+      if (object.data?.source?.kind !== 'user') continue
+      const content = object.data?.content
+      if (!Array.isArray(content)) continue
+      const message = content
+        .filter(block => block && block.type === 'text' && typeof block.text === 'string')
+        .map(block => block.text)
+        .join('\n')
+        .trim()
+      if (message.length >= 8) out.push(message)
+    }
+  }
+  return out
+}
+
+function buildLocalModel() {
+  if (localModel.built) return localModel.next
+  localModel.built = true
+  const home = process.env.DSH_HOME
+  if (!home) return null
+  const messages = humanMessages(home)
+  if (messages.length < 20) return null
+  const next = new Map()
+  for (const raw of messages) {
+    // Code blocks, URLs and quoted payloads teach the wrong next character.
+    const text = raw
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/https?:\/\/\S+/g, ' ')
+      .replace(/["'`]/g, '')
+      .trim()
+    const chinese = (text.match(/[\u4e00-\u9fa5]/g) ?? []).length
+    if (chinese / Math.max(1, text.length) < 0.5) continue
+    const padded = '\u0002\u0002' + text.replace(/\s+/g, '') + '\u0003'
+    for (let index = 2; index < padded.length; index += 1) {
+      const context = padded.slice(index - 2, index)
+      const char = padded[index]
+      let bag = next.get(context)
+      if (!bag) {
+        bag = new Map()
+        next.set(context, bag)
+      }
+      bag.set(char, (bag.get(char) ?? 0) + 1)
+    }
+  }
+  localModel.next = next
+  return next
+}
+
+/**
+ * Instant next characters from the user's own message corpus.
+ * @param {string} draft - what the user has typed.
+ * @param {number} maxChars - how many characters to return (1-6).
+ * @returns {string} the predicted tail, possibly empty.
+ */
+export function predictLocal(draft, maxChars = 2) {
+  const table = buildLocalModel()
+  if (!table) return ''
+  let context = ('\u0002\u0002' + String(draft ?? '').replace(/\s+/g, '')).slice(-2)
+  let out = ''
+  for (let step = 0; step < maxChars; step += 1) {
+    const bag = table.get(context)
+    if (!bag) break
+    let best = ''
+    let bestCount = 0
+    let total = 0
+    for (const [char, count] of bag) {
+      total += count
+      if (count > bestCount) {
+        best = char
+        bestCount = count
+      }
+    }
+    // Low confidence reads as noise: say nothing instead of guessing badly.
+    if (best === '' || best === '\u0003' || bestCount / Math.max(1, total) < 0.35) break
+    out += best
+    context = (context + best).slice(-2)
+  }
+  return out
 }
 
 /** Resolve a request's mode to one of the four, defaulting to standard. */export function resolveMode(value) {
@@ -1959,7 +2106,8 @@ export async function generateInlineCompletion(ctx, config, input, signal) {
   const route = resolveModel(ctx, config)
   const prompt = buildInlinePrompt({ ...input, profile: readUserProfile() })
   const result = await callExpertStage(ctx, route, prompt, config, config.inlineTimeoutMs, config.inlineMaxTokens, signal)
-  return { completion: cleanInline(result.text, input.draft), model: `${route.provider}/${route.model}`, usage: result.usage }
+  const limit = clampInt(input.maxChars, 2, 20, 12)
+  return { completion: cleanInline(result.text, input.draft).slice(0, limit), model: `${route.provider}/${route.model}`, usage: result.usage }
 }
 
 export async function generateExpertPrediction(ctx, config, input, signal) {
@@ -2202,6 +2350,25 @@ export async function handleRequest(ctx, config, inflight, req, res) {
     sendJson(res, 200, { ok: true, value: { written } })
     return
   }
+  if (url.pathname === `${config.routePrefix}/local`) {
+    // Instant guess from the user's own corpus; no model call, single-digit ms.
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: { code: 'method-not-allowed', message: 'POST required' } })
+      return
+    }
+    let body
+    try {
+      body = await readJsonBody(req, config.maxBodyBytes)
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: { code: 'bad-request', message: String(error?.message ?? error) } })
+      return
+    }
+    const payload = body && typeof body === 'object' ? body : {}
+    const draft = typeof payload.draft === 'string' ? payload.draft.slice(0, 500) : ''
+    const maxChars = clampInt(payload.maxChars, 1, 6, 2)
+    sendJson(res, 200, { ok: true, value: { completion: draft.trim() === '' ? '' : predictLocal(draft, maxChars) } })
+    return
+  }
   if (url.pathname === `${config.routePrefix}/inline`) {
     // Ghost text: the browser asks once the draft has been still for a while.
     if (req.method !== 'POST') {
@@ -2227,7 +2394,12 @@ export async function handleRequest(ctx, config, inflight, req, res) {
       const result = await generateInlineCompletion(
         ctx,
         config,
-        { draft, transcript, locale: typeof payload.locale === 'string' ? payload.locale.slice(0, 40) : 'zh-CN' },
+        {
+          draft,
+          transcript,
+          locale: typeof payload.locale === 'string' ? payload.locale.slice(0, 40) : 'zh-CN',
+          maxChars: clampInt(payload.maxChars, 2, 20, 12),
+        },
         controller.signal,
       )
       sendJson(res, 200, { ok: true, value: { completion: result.completion } })
@@ -2324,6 +2496,15 @@ export async function handleRequest(ctx, config, inflight, req, res) {
 export function apply(ctx, config = {}) {
   const settings = normalizeConfig(config)
   const inflight = new Map()
+  // Warm the local model off the boot path: building it reads a few hundred
+  // session logs, and the first ghost should not pay that cost.
+  setTimeout(() => {
+    try {
+      buildLocalModel()
+    } catch {
+      // An unreadable corpus only disables instant completion.
+    }
+  }, 1500)
   ctx.effect(() => {
     const dispose = ctx.webServer.register({
       kind: 'prefix',
