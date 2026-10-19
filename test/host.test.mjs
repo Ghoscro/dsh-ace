@@ -365,7 +365,7 @@ test('handleRequest returns the candidate envelope and the health route', async 
   const health = response()
   await handleRequest(ctx, cfg, new Map(), healthReq, health)
   assert.equal(health.status, 200)
-  assert.equal(JSON.parse(health.body).value.version, '0.1.0')
+  assert.equal(JSON.parse(health.body).value.version, JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version)
 })
 
 test('handleRequest does not call the model without a user message', async () => {
@@ -1112,7 +1112,8 @@ test('a rejection becomes a negative anchor in the next prompt', () => {
 
 test('inline completion keeps only the missing tail', () => {
   assert.equal(cleanInline('这个功能先别急', '这个功能先'), '别急')
-  assert.equal(cleanInline('先别急着上线', '这个功能先'), '先别急着上线')
+  assert.equal(cleanInline('先别急着上线', '这个功能先'), '别急着上线')
+  assert.equal(cleanInline('先', '这个功能先'), '')
   assert.equal(cleanInline('"别急"', '这个功能先'), '别急')
   assert.equal(cleanInline('', 'x'), '')
 })

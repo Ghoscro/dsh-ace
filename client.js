@@ -11,7 +11,7 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.18'
+const ACE_VERSION = '0.5.20'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -593,16 +593,29 @@ function apply(ctx) {
     // tail and paint it after the caret. Tab accepts, any further typing drops it.
     useEffect(() => {
       if (typeof document === 'undefined') return undefined
-      // The card attribute is the preferred anchor, but the shipped web build
-      // may not carry it: fall back to the largest editable textarea on screen.
+      // DSH 0.2.1 uses a Lexical contenteditable. The unrelated pet panel has
+      // a textarea too, so never fall back to an arbitrary page textarea.
       const textareaOf = () => {
-        const scoped = document.querySelector('[data-composer-card] textarea')
-        if (scoped) return scoped
-        const all = Array.from(document.querySelectorAll('textarea'))
-        const usable = all.filter(element => element.offsetParent !== null && !element.disabled && !element.readOnly)
-        const pool = usable.length > 0 ? usable : all
-        pool.sort((left, right) => right.clientWidth * right.clientHeight - left.clientWidth * left.clientHeight)
-        return pool[0] ?? null
+        return document.querySelector('[data-composer-input][contenteditable="true"]')
+          ?? document.querySelector('[data-composer-card] textarea:not(:disabled):not([readonly])')
+          ?? document.querySelector('[data-composer-card] [contenteditable="true"]')
+      }
+      const draftOf = element => typeof element.value === 'string'
+        ? element.value : (element.innerText ?? element.textContent ?? '').replace(/\r\n/g, '\n')
+      const atEnd = element => {
+        if (typeof element.selectionStart === 'number') {
+          return element.selectionStart === element.value.length && element.selectionEnd === element.value.length
+        }
+        const selection = window.getSelection()
+        if (!selection?.isCollapsed || !selection.rangeCount || !element.contains(selection.anchorNode)) return false
+        const tail = selection.getRangeAt(0).cloneRange()
+        tail.selectNodeContents(element)
+        tail.setStart(selection.anchorNode, selection.anchorOffset)
+        return tail.toString() === ''
+      }
+      const eventInside = (event, element) => {
+        const target = event.composedPath?.()[0] ?? event.target
+        return element && (target === element || element.contains(target))
       }
       let layer = null
       let completion = ''
@@ -688,7 +701,7 @@ function apply(ctx) {
         if (!element) return hide()
         // Only paint behind a caret that sits at the end of the draft: a ghost
         // in the middle of the text would cover what the user already wrote.
-        if (element.selectionStart !== element.value.length || element.value !== draft) return hide()
+        if (!atEnd(element) || draftOf(element) !== draft) return hide()
         if (!layer) {
           layer = document.createElement('div')
           layer.className = 'dcp-ghost'
@@ -829,6 +842,9 @@ function apply(ctx) {
       const schedule = draft => {
         window.clearTimeout(localTimer)
         window.clearTimeout(modelTimer)
+        localSeq += 1
+        modelSeq += 1
+        if (modelController) modelController.abort()
         if (!draft.trim()) return hide()
         // A cached tail stays valid while the draft only grows past it: the
         // user keeps typing and the ghost keeps hanging behind the caret.
@@ -848,54 +864,59 @@ function apply(ctx) {
 
       const onInput = event => {
         const element = textareaOf()
-        if (!element || event.target !== element) return
+        if (!eventInside(event, element)) return
+        if (event.isComposing) { hide(); return }
         // Typing collapses the ghost back to the hint and resets the text lamps.
         expanded = false
         chain.expanded = false
         chain.local = false
         chain.model = false
         drawChain()
-        schedule(element.value)
+        schedule(draftOf(element))
       }
 
       const onKeyDown = event => {
         const element = textareaOf()
+        if (event.isComposing || event.keyCode === 229) return
         // Any of these toggles the ghost. F1 is the primary; the others are
         // fallbacks for hosts or IMEs that swallow one of them.
         const toggleKey = (event.key === 'F1' && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey)
           || (event.code === 'Backquote' && !event.shiftKey && !event.altKey)
           || (event.code === 'Space' && (event.ctrlKey || event.metaKey))
         if (toggleKey) {
+          if (element && !eventInside(event, element)) return
           event.preventDefault()
           event.stopPropagation()
           chain.key = true
           const found = Boolean(element)
           const total = document.querySelectorAll('textarea').length
           const scoped = document.querySelectorAll('[data-composer-card]').length
-          pushRound(found ? '' : ` [无输入框 textarea=${total} card=${scoped}]`)
           if (element) {
             expanded = !expanded
             chain.expanded = expanded
-            paint(element.value)
+            if (expanded && !completion) schedule(draftOf(element))
+            paint(draftOf(element))
           }
+          pushRound(found ? '' : ` [无输入框 textarea=${total} card=${scoped}]`)
           return
         }
-        if (event.key !== 'Tab' || !completion || !expanded) return
-        if (!element || document.activeElement !== element) return
-        if (element.selectionStart !== element.value.length) return
+        if (event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || !completion || !expanded) return
+        if (!eventInside(event, element) || !atEnd(element)) return
+        if (!inputActions || typeof inputActions.setDraft !== 'function') return
         event.preventDefault()
         event.stopPropagation()
-        const next = element.value + completion
+        const next = draftOf(element) + completion
+        modelSeq += 1
+        localSeq += 1
+        window.clearTimeout(localTimer)
+        window.clearTimeout(modelTimer)
+        if (modelController) modelController.abort()
         hide()
-        if (inputActions && typeof inputActions.setDraft === 'function') {
-          inputActions.setDraft(next)
-        } else {
-          element.value = next
-        }
+        inputActions.setDraft(next)
       }
 
       const onFocusOut = event => {
-        if (event.target === textareaOf()) hide()
+        if (eventInside(event, textareaOf())) hide()
       }
 
       pushBoot()

@@ -56,6 +56,12 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
     AbortController: globalThis.AbortController,
     fetch: async (url, options) => {
       fetchCalls.push({ url, body: JSON.parse(options.body) })
+      if (url.endsWith('/stream')) return {
+        body: new ReadableStream({ start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: delta\ndata: {"full":"跑通再说"}\n\nevent: done\ndata: {"completion":"跑通再说"}\n\n'))
+          controller.close()
+        } }),
+      }
       return {
         status: 200,
         async json() {
@@ -76,6 +82,7 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
       }
     },
     setTimeout: window.setTimeout.bind(window),
+    TextDecoder,
     clearTimeout: window.clearTimeout.bind(window),
     requestAnimationFrame: callback => window.setTimeout(() => callback(0), 0),
     console,
@@ -174,6 +181,37 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
   assert.deepEqual(draftCalls, ['跑一遍测试'])
   assert.equal(container.querySelectorAll('.dcp-row').length, 0)
   assert.match(container.textContent, /inserted/)
+
+  // The shipped DSH composer is Lexical; a pet textarea must never win lookup.
+  const petInput = document.createElement('textarea')
+  petInput.value = '鲸鱼娘草稿'
+  document.body.append(petInput)
+  editor.textContent = '这个功能先'
+  inputSnapshot.draft = '这个功能先'
+  editor.focus()
+  const range = document.createRange()
+  range.selectNodeContents(editor)
+  range.collapse(false)
+  window.getSelection().removeAllRanges()
+  window.getSelection().addRange(range)
+  await act(async () => {
+    editor.dispatchEvent(new window.InputEvent('input', { bubbles: true }))
+    editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'F1', bubbles: true, cancelable: true }))
+    await sleep(250)
+  })
+  assert.equal(fetchCalls.find(call => call.url.endsWith('/stream')).body.draft, '这个功能先')
+  const ghost = document.querySelector('.dcp-ghost')
+  assert.equal(ghost.style.display, 'block')
+  assert.match(ghost.textContent, /这个功能先跑通再说/)
+  const ghostTab = new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+  await act(async () => { editor.dispatchEvent(ghostTab) })
+  assert.equal(ghostTab.defaultPrevented, true)
+  assert.equal(draftCalls.at(-1), '这个功能先跑通再说')
+  assert.equal(petInput.value, '鲸鱼娘草稿')
+  const beforePet = fetchCalls.length
+  petInput.dispatchEvent(new window.InputEvent('input', { bubbles: true }))
+  await act(async () => { await sleep(180) })
+  assert.equal(fetchCalls.length, beforePet)
 
   await act(async () => { root.unmount() })
 })

@@ -42,7 +42,7 @@ const MAX_EXPERT_FALSIFY = 90
 const MAX_EXPERT_NOW = 100
 const MAX_EXPERT_GOAL = 100
 const MAX_EXPERT_OUTCOME = 120
-const VERSION = '0.1.0'
+const VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
 
 const ZH_SYSTEM = `你是"下一句预测器"。根据对话、用户近况与任务上下文，预测用户下一条会亲自发出的消息，给出 {{N}} 条候选。
 
@@ -233,6 +233,8 @@ export function normalizeConfig(config = {}) {
     expertMovesTimeoutMs: clampInt(source.expertMovesTimeoutMs, 8000, 90000, 45_000),
     // Ghost-text completion: one short call, low latency budget.
     inlineMaxTokens: clampInt(source.inlineMaxTokens, 24, 400, 120),
+    inlineReasoningEffort: typeof source.inlineReasoningEffort === 'string' && source.inlineReasoningEffort.trim()
+      ? source.inlineReasoningEffort.trim() : undefined,
     inlineTimeoutMs: clampInt(source.inlineTimeoutMs, 2000, 20_000, 6000),
     temperature: clampNumber(source.temperature, 0, 1.5, 0.8),
     timeoutMs: clampInt(source.timeoutMs, 2000, 20_000, 15_000),
@@ -1309,9 +1311,14 @@ export function cleanInline(text, draft = '') {
   out = out.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim()
   if (out === '') return ''
   const tail = String(draft ?? '')
-  if (tail && out.startsWith(tail)) out = out.slice(tail.length).trim()
-  const overlap = tail.slice(-10)
-  if (overlap && out.startsWith(overlap)) out = out.slice(overlap.length).trim()
+  // Remove the longest echoed suffix once, including a single trailing word
+  // such as "先". Streaming partial echoes remain empty until new text arrives.
+  for (let size = Math.min(tail.length, out.length); size > 0; size -= 1) {
+    if (out.startsWith(tail.slice(-size))) {
+      out = out.slice(size).trim()
+      break
+    }
+  }
   return out.slice(0, 40)
 }
 
@@ -2151,8 +2158,17 @@ async function rewriteWithoutBanned(ctx, route, config, input, text, signal) {
  * @param {AbortSignal} signal - cancellation.
  * @returns {Promise<string>} the full completion.
  */
+async function inlineEffort(ctx, config, route) {
+  if (config.inlineReasoningEffort) return config.inlineReasoningEffort
+  if (typeof ctx.llm.resolveModelInfo !== 'function') return undefined
+  const model = await ctx.llm.resolveModelInfo(route.provider, route.model)
+  // Only choose a no-thinking id explicitly advertised by this provider.
+  return model.reasoning?.efforts?.find(effort => effort.id === 'off')?.id
+}
+
 export async function streamInlineCompletion(ctx, config, input, onDelta, signal) {
   const route = resolveModel(ctx, config)
+  const effort = await raceAbort(inlineEffort(ctx, config, route), signal, 'inline aborted')
   const prompt = buildInlinePrompt({ ...input, profile: readUserProfile() })
   const iterable = ctx.llm.stream({
     provider: route.provider,
@@ -2164,17 +2180,18 @@ export async function streamInlineCompletion(ctx, config, input, onDelta, signal
     // No forced reasoning effort: DSH rejects an id the model does not list
     // (UNSUPPORTED_REASONING_EFFORT), which surfaced as `finish=error` and an
     // empty ghost.
-    ...(config.inlineReasoningEffort ? { reasoningEffort: config.inlineReasoningEffort } : {}),
+    ...(effort ? { reasoningEffort: effort } : {}),
     signal,
   })
   const iterator = iterable[Symbol.asyncIterator]()
   let output = ''
   let sent = 0
   let finishKind = ''
+  let finishError = ''
   let reasoningChars = 0
   try {
     while (true) {
-      const next = await iterator.next()
+      const next = await raceAbort(Promise.resolve(iterator.next()), signal, 'inline aborted')
       if (next.done) break
       const chunk = next.value
       if (!chunk) continue
@@ -2184,6 +2201,10 @@ export async function streamInlineCompletion(ctx, config, input, onDelta, signal
       }
       if (chunk.type === 'finish' && chunk.reason) {
         finishKind = String(chunk.reason.kind ?? '')
+        if (finishKind === 'error' || finishKind === 'aborted') {
+          const failure = chunk.reason.failure
+          finishError = [failure?.code, failure?.message || finishKind].filter(Boolean).join(': ')
+        }
         continue
       }
       if (chunk.type !== 'text-delta' || typeof chunk.text !== 'string') continue
@@ -2199,6 +2220,7 @@ export async function streamInlineCompletion(ctx, config, input, onDelta, signal
   } finally {
     if (typeof iterator.return === 'function') void Promise.resolve(iterator.return()).catch(() => {})
   }
+  if (finishError) throw new Error(`inline stream failed: ${finishError}`)
   if (output.trim() === '') {
     // Surface the same diagnosis the batch route reports: a reasoning model
     // that spends the whole budget produces no text at all.
@@ -2216,13 +2238,14 @@ export async function generateInlineCompletion(ctx, config, input, signal) {
   else signal.addEventListener('abort', forward, { once: true })
   const timer = setTimeout(() => controller.abort(new Error('inline timed out')), config.inlineTimeoutMs)
   try {
+    const effort = await raceAbort(inlineEffort(ctx, config, route), controller.signal, 'inline aborted')
     // Reasoning models burn the whole budget thinking: this route needs the
     // answer, not the deliberation, so reasoning is off and the cap is generous.
     const result = await streamOnce(ctx, route, prompt, {
       ...config,
       maxTokens: Math.max(400, config.inlineMaxTokens),
       temperature: 0.5,
-      ...(config.inlineReasoningEffort ? { reasoningEffort: config.inlineReasoningEffort } : {}),
+      reasoningEffort: effort,
     }, controller.signal)
     const limit = clampInt(input.maxChars, 2, 20, 12)
     return { completion: cleanInline(result.text, input.draft).slice(0, limit), model: `${route.provider}/${route.model}`, usage: result.usage }
@@ -2501,7 +2524,8 @@ export async function handleRequest(ctx, config, inflight, req, res) {
     }
     const controller = new AbortController()
     const onClose = () => controller.abort(new Error('stream closed'))
-    req.on('close', onClose)
+    res.on('close', onClose)
+    const timer = setTimeout(() => controller.abort(new Error('inline timed out')), config.inlineTimeoutMs)
     try {
       const transcript = sanitizeTranscript(payload.transcript, config)
       const completion = await streamInlineCompletion(
@@ -2519,7 +2543,8 @@ export async function handleRequest(ctx, config, inflight, req, res) {
     } catch (error) {
       send('error', { message: String(error?.message ?? error).slice(0, 200) })
     } finally {
-      req.off('close', onClose)
+      clearTimeout(timer)
+      res.off('close', onClose)
       if (!res.writableEnded) res.end()
     }
     return

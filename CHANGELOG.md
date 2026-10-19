@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.20 — 2026-10-19
+
+- Remove overlapping draft suffixes from inline output, including a repeated trailing character, before painting or accepting.
+- The health endpoint now reports the actual package version.
+
+## 0.5.19 — 2026-10-19
+
+- Inline completion selects `off` only when the live model catalog advertises it; explicit inline effort survives normalization and batch completion no longer inherits the card effort.
+- Preserve stream failure codes, bound stalled calls, and abort on response disconnect.
+- Bind ghost text to the DSH Lexical composer, exclude unrelated textareas, and accept via the host draft action. Ignore IME/modifier keys and cancel stale predictions.
+
 ## 0.5.18 — 2026-10-19
 
 - Fix: the inline route forced `reasoningEffort: 'none'`, which DSH rejects with
