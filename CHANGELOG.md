@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.12 — 2026-10-19
+
+- The ghost toggle is now `F1` (was backquote). The handler runs in capture
+  with `preventDefault` + `stopPropagation` so the help pane does not open on
+  the same press, and it only fires while the composer is focused.
+
 ## 0.5.11 — 2026-10-19
 
 - The ghost toggle moved from Alt to the backquote key (`` ` ``), right under the
