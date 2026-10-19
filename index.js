@@ -36,6 +36,10 @@ const MAX_EXPERT_LINE = 140
 const MAX_EXPERT_EXAMPLE = 140
 const MAX_EXPERT_RELATION = 120
 const MAX_EXPERT_FALSIFY = 90
+// Plain-language lines: what is happening, what the step is for, what comes after.
+const MAX_EXPERT_NOW = 100
+const MAX_EXPERT_GOAL = 100
+const MAX_EXPERT_OUTCOME = 120
 const VERSION = '0.1.0'
 
 const ZH_SYSTEM = `你是"下一句预测器"。根据对话、用户近况与任务上下文，预测用户下一条会亲自发出的消息，给出 {{N}} 条候选。
@@ -119,7 +123,7 @@ const ZH_EXPERT = `你是用户的专家级 next-move 顾问。不要猜最可�
 
 输出格式：每行一个 JSON 对象，不要数组、不要逗号分隔、不要 markdown、不要代码围栏。
 前 3-5 行是候选，每行：
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"..."}
+{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","now":"...","goal":"...","outcome":"..."}
 最后一行是选择：
 {"best_index":0,"comparison":"为什么选它，其他方向差在哪"}
 
@@ -130,7 +134,7 @@ const ZH_EXPERT = `你是用户的专家级 next-move 顾问。不要猜最可�
 - over_obvious 必须回答：相比顺手说“继续/好”，它多得到什么；why 说明这条为什么值得现在发。
 - 若所有候选都不比顺手继续更好，只输出一行：{"best_index":null,"comparison":"没有更好的下一步"}。
 - 不要编造文件名、数字或结论；不要用“你可以/建议/不妨”这类助手口吻。
-- x / y / z / relation / surface_like / falsify 是四拍卡片的字段，规则见 [INSIGHT]；text 就是第四拍的 W，必须能直接发送。
+- x / y / z / relation / surface_like / falsify 是四拍卡片的字段，规则见 [INSIGHT]；now / goal / outcome 是人话三行，规则见 [PLAIN]；text 就是第四拍的 W，必须能直接发送。
 - 只输出这些 JSON 行，不要解释。`
 
 const EN_EXPERT = `You are the user's expert next-move advisor. Do not predict the most likely next line; generate 3-5 genuinely different candidate moves, compare them, and keep only the one most worth sending.
@@ -139,7 +143,7 @@ Directions include: advance the next step, use an existing tool or a cheaper pat
 
 Output format: one JSON object per line. No array, no comma-separated list, no markdown, no code fences.
 The first 3-5 lines are candidates:
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"..."}
+{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","now":"...","goal":"...","outcome":"..."}
 The final line is the selection:
 {"best_index":0,"comparison":"why this one, and why the others are weaker"}
 
@@ -150,7 +154,7 @@ Rules:
 - over_obvious must answer: what does it gain over the obvious "continue/ok"? why explains why it is worth sending now.
 - If no move beats the obvious next line, output one line: {"best_index":null,"comparison":"no better next move"}.
 - Never invent file names, numbers, or conclusions; no assistant voice ("you could", "I suggest").
-- x / y / z / relation / surface_like / falsify are the four-beat card fields; the rules are in [INSIGHT]. text is the fourth beat (W) and must be sendable as-is.
+- x / y / z / relation / surface_like / falsify are the four-beat card fields; the rules are in [INSIGHT]. now / goal / outcome are the plain-language lines; the rules are in [PLAIN]. text is the fourth beat (W) and must be sendable as-is.
 - Output only those JSON lines, no commentary.`
 
 /**
@@ -716,6 +720,27 @@ Field rules:
 
 const insightBlock = locale => (locale.startsWith('zh') ? INSIGHT_ZH : INSIGHT_EN)
 
+/** A card has to explain itself in plain language before it asks for Tab. */
+const PLAIN_ZH = `[PLAIN - 人话三行，每张卡必须有]
+一张卡要让用户在十秒内回答三个问题：现在是什么情况、这一步为了什么、做完会得到什么。每条候选都要写 now / goal / outcome，缺一条这张卡不出。
+
+- now：现在发生了什么、卡在哪。用他看得见的现象说，不写内部机制（"点保存没反应"，不是"持久化层异常"）。0-100 字。
+- goal：这一步是为了拿到什么结果。说目的，不说动作（"确认是不是重试在掩盖失败"，不是"改掉 retry 参数"）。0-100 字。
+- outcome：做完之后他会看到或拿到什么，写到他可以自己判断"这是不是我要的"。修复就写哪里会变好；探索就写会拿到哪些选项。0-120 字。
+- 三行都用日常语言：不用未解释的缩写、模块名、命令、函数名。text（W）也一样——读者是这个 level 的人，不是你的同事。
+- 这三行不是复述 text，而是让 text 变得可判断：他读完应该能决定按不按 Tab。`
+
+const PLAIN_EN = `[PLAIN - three plain lines on every card]
+A card has to let the user answer three questions in ten seconds: what is happening now, what this step is for, and what they get after it. Every candidate writes now / goal / outcome; with one missing the card is dropped.
+
+- now: what is happening and where it is stuck, in symptoms the user can see. Not internal mechanics ("saving does nothing", not "the persistence layer throws").
+- goal: the result this step is for, not the action ("find out whether the retry hides the failure", not "change the retry flag").
+- outcome: what the user will see or get afterwards, specific enough for them to judge "is this what I want". A fix says what gets better; an exploration says which options they end up with.
+- All three use everyday language: no unexplained acronyms, module names, commands or function names. The same goes for text (W) - the reader is a person at this level, not your coworker.
+- These lines do not restate text; they make text judgeable. After reading them the user should know whether to press Tab.`
+
+const plainBlock = locale => (locale.startsWith('zh') ? PLAIN_ZH : PLAIN_EN)
+
 /** Every card is a technical next prompt, not a vibe. Static so it caches. */
 const TECH_ZH = `[TECH - 这张卡是一句能直接开工的下一轮 prompt]
 - text 必须带一个能验收的东西：工程师给文件、命令、参数、测试或阈值；小白给一件他能亲眼确认的事（点哪里、说什么、刷新后看什么）。不要"优化一下""再看看""继续推进"这种空话。
@@ -829,7 +854,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -848,14 +873,14 @@ export function buildSingleMovePrompt(input) {
     .join('\n') || '(none)'
   const system = locale.startsWith('zh')
     ? `你是 ACE。先在内部比较 3 个方向（推进、用现成工具/更省事、重新框定），只输出一个最值得用户发送的 JSON 对象。没有比顺手继续更好的，就输出 {"best_index":null,"comparison":"没有更好的下一步"}。
-JSON 对象字段：text, why, evidence, risk, action, value, novelty, worth_extra_step, over_obvious。
+JSON 对象字段：text, why, evidence, risk, action, value, novelty, worth_extra_step, over_obvious, x, y, z, relation, surface_like, falsify, now, goal, outcome。
 不要数组、不要多行对象、不要 markdown。text 用用户口吻，可直接发送；why 不发送；不要编造。`
     : `You are ACE. Compare 3 directions internally (advance, existing tool/cheaper path, reframe) and output only the one JSON object most worth sending. If nothing beats the obvious next line, output {"best_index":null,"comparison":"no better next move"}.
-JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step, over_obvious.
+JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step, over_obvious, x, y, z, relation, surface_like, falsify, now, goal, outcome.
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
   }
 }
 
@@ -1003,6 +1028,14 @@ export function parseExpertSelection(text, count = 5) {
     // judges the mapping itself; model-provided scores are not used.
     const relationPresent = ('z' in object) || ('relation' in object) || ('surface_like' in object)
     const relationOk = relationPresent ? judgeRelation({ x, z, relation, surfaceLike }) : null
+    // Plain-language lines: without all three the card cannot be judged.
+    const now = asText(object.now, MAX_EXPERT_NOW)
+    const goal = asText(object.goal, MAX_EXPERT_GOAL)
+    const outcome = asText(object.outcome, MAX_EXPERT_OUTCOME)
+    const plainPresent = ('now' in object) || ('goal' in object) || ('outcome' in object)
+    const plainOk = plainPresent
+      ? (now !== '' && goal !== '' && outcome !== '' && now.length >= 4 && goal.length >= 4 && outcome.length >= 4)
+      : null
     moves.push({
       text: candidate,
       why: clip(why, MAX_EXPERT_WHY),
@@ -1025,6 +1058,11 @@ export function parseExpertSelection(text, count = 5) {
       relation_present: relationPresent,
       // `null` means "legacy candidate, not judged"; `false` drops the card.
       relation_ok: relationOk,
+      now,
+      goal,
+      outcome,
+      plain_present: plainPresent,
+      plain_ok: plainOk,
     })
   }
   return { moves, bestIndex, comparison }
@@ -1119,7 +1157,7 @@ export function selectBestMove(selection, minScore = 5) {
   // itself. Legacy candidates (no four-beat fields) pass.
   const usable = selection.moves
     .map((move, index) => ({ move, index }))
-    .filter(({ move }) => move.relation_ok !== false)
+    .filter(({ move }) => move.relation_ok !== false && move.plain_ok !== false)
   if (usable.length === 0) return null
   const scored = usable.map(({ move, index }) => ({
     ...move,
@@ -1150,6 +1188,9 @@ export function selectBestMove(selection, minScore = 5) {
     relation: chosen.relation ?? '',
     falsify: chosen.falsify ?? '',
     relation_ok: chosen.relation_ok ?? null,
+    now: chosen.now ?? '',
+    goal: chosen.goal ?? '',
+    outcome: chosen.outcome ?? '',
   }
 }
 

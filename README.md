@@ -42,6 +42,14 @@ Most next-message tools optimize for **what you would probably type**. ACE optim
 - **W** is a checkable action for today: engineers get a file or command, everyone else gets something they can see ("refresh and look whether the badge is still red").
 - **Wrong if:** what result would prove the card wrong.
 
+**Three plain lines on every card:**
+
+- **Now:** what is happening and where it is stuck, in symptoms you can see.
+- **Why:** the result this step is for, not the action.
+- **After:** what you will see or get, specific enough to judge "is this what I want".
+
+One missing line and the card is not shown. Wild mode is included: the line `Tab` inserts must be readable at the current level, not a stack of unexplained terms.
+
 - It generates 3–5 directions internally: advance, use an existing tool, reframe, verify, clarify, constrain, close.
 - It scores them for `value`, `novelty`, `worth_extra_step`, and action type. The relation beat is judged by the host, not scored by the model: a surface-alike example needs no mapping line, and a surface-unlike example with no written mapping is not shown at all.
 - **Level:** the card reads the user's own messages and adapts — everyday language and one action at a time for non-engineers, shorthand and judgement for engineers. Override it with `level` in the plugin config.
@@ -119,7 +127,7 @@ The parser scans balanced JSON objects and skips a truncated or malformed line w
 - **Ledger:** each session keeps an append-only record of what the predictor saw; the prompt is rebuilt from it, so the prefix only grows, and past `ledgerMaxEntries` the oldest part is written to an archive file and replaced by a deterministic digest. `ledger: false` turns it off.
 - **Samples:** the last 50 expert predictions (candidate moves, the raw answer, the last user line) stay in `diagnostics/dsh-ace-samples.jsonl`; `npm run sweep` re-scores them offline at every threshold, with no model calls.
 - **Accounting:** every prediction appends one row to `diagnostics/dsh-ace-usage.jsonl` with the session, turn index, token counts, cache hits and a priced cost using the configurable `pricing` block.
-- **Cost:** one model call per ACE suggestion. At the default prices and a measured 4.3–4.8k-character prompt (0.4.0 was 2.4–3.0k), one suggestion is roughly **$0.0005–0.0015**; a prefix-cache hit cuts the input side by about 10x. The output caps are `safe` 2200, `standard` 4000, `brainstorm` 5600, `wild` 6000 tokens.
+- **Cost:** one model call per ACE suggestion. At the default prices and a measured 5.0–5.6k-character prompt (0.4.0 was 2.4–3.0k), one suggestion is roughly **$0.0006–0.0018**; a prefix-cache hit cuts the input side by about 10x. The output caps are `safe` 2200, `standard` 4000, `brainstorm` 5600, `wild` 6000 tokens.
 - **What it costs you per turn:** automatic ACE is one call per completed turn; pause it and only the ✦ click costs anything. Automatic ACE is the expensive mode; pause it if you only want it on demand.
 
 ## Development

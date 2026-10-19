@@ -1023,6 +1023,35 @@ test('the prompt asks for the four beats and the falsifier', () => {
   assert.match(en, /one concrete place the same line shows up again/)
 })
 
+test('every card carries the three plain-language lines', () => {
+  const base = {
+    text: '把重试去掉只跑一次', why: '重试掩盖失败', action: 'advance',
+    value: 7, novelty: 6, worth_extra_step: 6, insight: 6,
+    x: '要不要跑全量', y: '重试会掩盖偶发失败', z: '上次那个上传重试也是',
+    surface_like: true, relation: '', falsify: '一次就过',
+    now: '点保存没反应', goal: '确认是不是重试在掩盖失败',
+    outcome: '你会看到它是一次就过，还是一直挂',
+  }
+  const full = parseExpertSelection(JSON.stringify(base), 5).moves[0]
+  assert.equal(full.plain_ok, true)
+  assert.equal(full.now, '点保存没反应')
+
+  const missing = parseExpertSelection(JSON.stringify({ ...base, outcome: '' }), 5)
+  assert.equal(missing.moves[0].plain_ok, false)
+  assert.equal(selectBestMove(missing, 5), null)
+})
+
+test('the plain block reaches both prompts', () => {
+  const base = { transcript: [{ role: 'user', text: '按钮点不动' }], count: 4, mode: 'wild' }
+  const zh = buildExpertPrompt({ ...base, locale: 'zh-CN' }).user
+  const en = buildExpertPrompt({ ...base, locale: 'en-US' }).user
+  assert.match(zh, /\[PLAIN - 人话三行，每张卡必须有\]/)
+  assert.match(zh, /现在是什么情况、这一步为了什么、做完会得到什么/)
+  assert.match(zh, /不用未解释的缩写、模块名、命令、函数名/)
+  assert.match(en, /\[PLAIN - three plain lines on every card\]/)
+  assert.match(en, /what is happening now, what this step is for/)
+})
+
 test('a quoted reply must actually appear in the assistant message', () => {
   const assistant = '改好了。要跑全量吗？要不要先看 diff。'
   assert.equal(repliesTo('要跑全量吗', assistant), true)

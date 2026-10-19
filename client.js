@@ -21,6 +21,7 @@ const zh = {
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
   salvaged: '模型没按结构化格式返回，已把原文放进卡片',
   beatX: '你刚说：', beatY: '背后：', beatZ: '还会：', relation: '怎么对上：', falsify: '错了会这样',
+  now: '现在：', goal: '目的：', outcome: '做完：',
   mode: '模式', mode_safe: '保守安全', mode_standard: '常规推理', mode_brainstorm: '脑暴思维', mode_wild: '王牌预测',
 }
 const en = {
@@ -36,6 +37,7 @@ const en = {
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
   salvaged: 'The model did not return structured JSON; its raw answer is in the card',
   beatX: 'You said: ', beatY: 'Behind it: ', beatZ: 'Also: ', relation: 'How it maps: ', falsify: 'Wrong if',
+  now: 'Now: ', goal: 'Why: ', outcome: 'After: ',
   mode: 'Mode', mode_safe: 'Safe', mode_standard: 'Standard', mode_brainstorm: 'Brainstorm', mode_wild: 'ACE',
 }
 
@@ -397,6 +399,9 @@ function apply(ctx) {
             z: str('z'),
             relation: str('relation'),
             falsify: str('falsify'),
+            now: str('now'),
+            goal: str('goal'),
+            outcome: str('outcome'),
           }
         }).filter(Boolean).slice(0, count)
         if (candidates.length === 0) {
@@ -458,6 +463,7 @@ function apply(ctx) {
     '.dcp-text{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere;font-size:var(--dsh-fs-w,15px);line-height:1.5}',
     '.dcp-why{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.66;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-x{font-size:var(--dsh-fs-meta,13px);line-height:1.4;opacity:.6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-plain{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.8;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-z{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.64;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-rel{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.72;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-beat{font-weight:700;opacity:.82;margin-right:2px}',
@@ -678,6 +684,9 @@ function apply(ctx) {
       const z = field('z')
       const relation = field('relation')
       const falsify = field('falsify')
+      const now = field('now')
+      const goal = field('goal')
+      const outcome = field('outcome')
       // Four-beat cards replace why with a structured line, then add Z and W.
       const line = y || why
       const meta = [
@@ -696,6 +705,12 @@ function apply(ctx) {
       React.createElement('span', { className: 'dcp-body' },
         x ? React.createElement('span', { className: 'dcp-x' },
           React.createElement('span', { className: 'dcp-beat' }, t('beatX')), x) : null,
+        now ? React.createElement('span', { className: 'dcp-plain' },
+          React.createElement('span', { className: 'dcp-beat' }, t('now')), now) : null,
+        goal ? React.createElement('span', { className: 'dcp-plain' },
+          React.createElement('span', { className: 'dcp-beat' }, t('goal')), goal) : null,
+        outcome ? React.createElement('span', { className: 'dcp-plain' },
+          React.createElement('span', { className: 'dcp-beat' }, t('outcome')), outcome) : null,
         line ? React.createElement('span', { className: 'dcp-why' },
           y ? React.createElement('span', { className: 'dcp-beat' }, t('beatY')) : null, line) : null,
         z ? React.createElement('span', { className: 'dcp-z' },
