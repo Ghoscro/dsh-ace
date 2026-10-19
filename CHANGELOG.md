@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.1 — 2026-10-19
+
+- The card is written as the user, not as an assistant describing the user:
+  VOICE now says "you are them, it is your turn to type", and a new HUMAN block
+  bans the assistant register (em-dash explanations, "not X but Y", "essentially",
+  "systematic", "closed loop", ...). Acceptance: paste `text` into a group chat
+  and nobody guesses AI wrote it.
+- The loaded build reports itself on `<html data-ace-version>`, and
+  `test/install-version.test.ts` keeps client.js, package.json, the profile
+  dependency spec and the lockfile on the same version.
+
 ## 0.5.0 — 2026-10-19
 
 - The card is a four-beat "举一反三" instead of one smart next line: X restates
