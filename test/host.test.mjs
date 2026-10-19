@@ -8,7 +8,7 @@ import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
-  captureSample, countAnchors, findBannedPhrase, readProjectShape, repliesTo, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
+  captureSample, countAnchors, estimateLevel, findBannedPhrase, readProjectShape, repliesTo, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
   ACE_MODES,
 } from '../index.js'
 
@@ -989,4 +989,37 @@ test('the reply block and the predictive standard policy are in the prompt', () 
   assert.match(prompt, /我草，我就是要说这个/)
   assert.match(prompt, /MODE standard: infer the exact line this user wants to send next/)
   assert.match(buildExpertPrompt({ transcript: [], count: 4, locale: 'en-US', mode: 'standard' }).user, /\[REPLY - read the mind/)
+})
+
+test('the technical level is inferred from the user messages, with a manual override', () => {
+  assert.equal(estimateLevel([{ role: 'user', text: '我想做个记账的小工具，但我不太会写代码，能帮我一下吗' }]), 'novice')
+  assert.equal(estimateLevel([
+    { role: 'user', text: '把 src/cache.ts 里的 TTL 改成 30 秒，跑 npm test 看并发下会不会重复回源' },
+    { role: 'user', text: '顺便补个单测，别动 api 接口' },
+  ]), 'expert')
+  assert.equal(estimateLevel([], 'novice'), 'novice')
+  assert.equal(estimateLevel([{ role: 'assistant', text: 'hello' }]), 'working')
+})
+
+test('the prompt carries a level block that matches the inferred level', () => {
+  const base = { transcript: [{ role: 'user', text: '修一下测试' }], count: 4, locale: 'zh-CN', mode: 'standard' }
+  assert.match(buildExpertPrompt({ ...base, level: 'novice' }).user, /\[LEVEL - 这位用户不是工程师\]/)
+  assert.match(buildExpertPrompt({ ...base, level: 'expert' }).user, /\[LEVEL - 这位用户是工程师\]/)
+  assert.match(buildExpertPrompt({ ...base, level: 'working' }).user, /\[LEVEL - 这位用户能读技术内容/)
+  assert.match(buildExpertPrompt({ ...base, locale: 'en-US', level: 'novice' }).user, /\[LEVEL - this user is not an engineer\]/)
+})
+
+test('generation passes the inferred level into the real prompt', async () => {
+  const seen = []
+  const ctx = { get: () => undefined, llm: llmCapturing(EXPERT_JSONL, seen) }
+  await generateExpertPrediction(ctx, normalizeConfig(), {
+    transcript: [
+      { role: 'user', text: '把 src/cache.ts 的 TTL 改成 30 秒，跑 npm test 看并发下会不会重复回源' },
+      { role: 'assistant', text: '改好了，要跑全量吗？' },
+      { role: 'user', text: '顺便补个单测，别动 api 接口' },
+    ],
+    count: 4, cwd: '', locale: 'zh-CN', style: 'standard',
+  }, new AbortController().signal)
+  const prompt = seen[0].messages[0].content[0].text
+  assert.match(prompt, /\[LEVEL - 这位用户是工程师\]/)
 })

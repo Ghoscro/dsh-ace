@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-10-19
 
+- The card adapts to the user's technical level, inferred from their own
+  messages (code blocks, paths, commands, domain terms) or forced with `level`:
+  non-engineers get everyday language and one action at a time, engineers get
+  shorthand and judgement.
 - The default (`standard`) mode now predicts the line the user actually wanted to
   send: every candidate carries `reply_to`, a verbatim fragment of the
   assistant's last message, and the scorer rewards a quote that really appears

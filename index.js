@@ -195,6 +195,8 @@ export function normalizeConfig(config = {}) {
     captureSamples: source.captureSamples !== false,
     sampleLimit: clampInt(source.sampleLimit, 10, 200, 50),
     // Cognitive ledger: prompt from an append-only record instead of the window.
+    // How much technical shorthand the card may use: auto reads the transcript.
+    level: ['auto', 'novice', 'working', 'expert'].includes(source.level) ? source.level : 'auto',
     ledger: source.ledger !== false,
     autoArchive: source.autoArchive !== false,
     ledgerMaxEntries: clampInt(source.ledgerMaxEntries, 40, 400, 160),
@@ -623,6 +625,52 @@ const REPLY_EN = `[REPLY - read the mind, not give advice]
 
 const replyBlock = locale => (locale.startsWith('zh') ? REPLY_ZH : REPLY_EN)
 
+const LEVEL_MARKERS = [
+  /```/,
+  /`[^`]+`/,
+  /[\w./-]+\.(?:ts|tsx|js|mjs|json|py|sh|ya?ml)\b/i,
+  /\b(?:npm|pnpm|git|api|json|http|server|client|test|bug|log|deploy|cache|db|sql|commit|merge)\b/i,
+  /[A-Za-z_][A-Za-z0-9_]*\(/,
+  // CJK has no ASCII word boundary, so these must not be wrapped in \b.
+  /(?:模块|接口|依赖|并发|缓存|部署|重构|架构|异步|线程|内存|测试|报错|提交|合并|编译)/,
+]
+
+/**
+ * Guess how technical the user is from their own messages, so the card does not
+ * talk over their head (or under it).
+ * @param {object[]} transcript - conversation rows.
+ * @param {string} [override] - explicit level from config.
+ * @returns {'novice'|'working'|'expert'} level.
+ */
+export function estimateLevel(transcript, override = 'auto') {
+  if (override === 'novice' || override === 'working' || override === 'expert') return override
+  const rows = (Array.isArray(transcript) ? transcript : []).filter(row => row.role === 'user').slice(-6)
+  let score = 0
+  for (const row of rows) {
+    const text = String(row?.text ?? '')
+    for (const marker of LEVEL_MARKERS) if (marker.test(text)) score += 1
+    if (text.length > 160) score += 1
+  }
+  if (rows.length === 0) return 'working'
+  if (score <= 1) return 'novice'
+  if (score >= 5) return 'expert'
+  return 'working'
+}
+
+const LEVEL_ZH = {
+  novice: `[LEVEL - 这位用户不是工程师] 用日常语言写这张卡：术语第一次出现用半句话解释，一次只给一个动作，给出能直接照做的东西（点哪里、说什么、跑什么）。不要假设他知道文件结构、命令行或缩写。`,
+  working: `[LEVEL - 这位用户能读技术内容，但不一定写代码] 可以用常见术语（接口、测试、部署），但要一眼能懂；给具体动作，不要给抽象原则。`,
+  expert: `[LEVEL - 这位用户是工程师] 直接用术语和简写，不解释常识，不铺垫；判断要硬，动作要短。`,
+}
+
+const LEVEL_EN = {
+  novice: `[LEVEL - this user is not an engineer] Write in everyday language. Explain a term the first time it appears in half a sentence, give one action at a time, and make it directly doable (where to click, what to say, what to run). Do not assume they know the file layout, a shell, or an acronym.`,
+  working: `[LEVEL - this user reads technical content but may not write code] Common terms (API, test, deploy) are fine when they stay readable; give concrete actions, not abstract principles.`,
+  expert: `[LEVEL - this user is an engineer] Use jargon and shorthand, skip the basics, skip the setup; be decisive and short.`,
+}
+
+const levelBlock = (locale, level) => (locale.startsWith('zh') ? LEVEL_ZH : LEVEL_EN)[level]
+
 /** The card should carry an insight the user would not have produced alone. */
 const INSIGHT_ZH = `[INSIGHT - 用户自己想不到的那一层]
 - 这张卡的价值不在"下一步做点什么"，而在用户自己不会想到的那个结构性事实：模块边界正在被穿过、两个概念其实该拆开、这个改动会锁死下次迁移、这个失败模式在领域里很常见、这条路径的成本是幂增的。
@@ -751,7 +799,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -777,7 +825,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
   }
 }
 
@@ -1147,6 +1195,7 @@ export function captureSample(sample, options = {}) {
       sessionId: typeof sample.sessionId === 'string' ? sample.sessionId.slice(0, 200) : 'anonymous',
       style: sample.style ?? '',
       mode: sample.mode ?? '',
+      level: sample.level ?? '',
       locale: sample.locale ?? '',
       count: sample.count ?? 0,
       threshold: sample.threshold ?? 0,
@@ -1611,8 +1660,9 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   if (ingested.archived > 0 || ingested.gap) {
     logPredictionEvent({ status: 'ledger', sessionId: input.sessionId, archived: ingested.archived, gap: ingested.gap === true })
   }
+  const level = estimateLevel(sourceTranscript, config.level)
   const situation = buildDeterministicSituation(sourceTranscript)
-  const movesPrompt = buildExpertPrompt({ ...input, transcript: sourceTranscript, mode, evidence, situation })
+  const movesPrompt = buildExpertPrompt({ ...input, transcript: sourceTranscript, mode, level, evidence, situation })
   let result
   let selection
   try {
@@ -1627,7 +1677,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
       shape: describeShape(result?.text),
     })
     if (signal.aborted) throw abortError(signal, 'expert stage aborted')
-    const retryPrompt = buildSingleMovePrompt({ ...input, mode, evidence, situation })
+    const retryPrompt = buildSingleMovePrompt({ ...input, mode, level, evidence, situation })
     result = await callExpertStage(
       ctx, route, retryPrompt, config, Math.min(12_000, config.expertMovesTimeoutMs), 1400, signal,
     )
@@ -1681,6 +1731,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
       sessionId: input.sessionId,
       style: mode,
       mode: 'expert',
+      level,
       locale: input.locale,
       count: input.count,
       threshold: config.expertMinScore,

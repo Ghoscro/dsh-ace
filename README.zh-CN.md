@@ -21,7 +21,7 @@ npm 上 `dsh-ace` 已被无关项目占用，包名是 `@ghoscro/dsh-ace`。在�
 
 ```bash
 # 在 DSH profile 目录里
-pnpm add file:/绝对路径/ghoscro-dsh-ace-0.3.2.tgz
+pnpm add file:/绝对路径/ghoscro-dsh-ace-0.4.0.tgz
 ```
 
 然后把 `"@ghoscro/dsh-ace"` 加进 `dsh.profile.bundles`，在 profile 里 materialize（DSH 插件页或 `pnpm install`），重启 DSH。composer 工具行会出现 **✦ 深度预测**。
@@ -34,6 +34,7 @@ pnpm add file:/绝对路径/ghoscro-dsh-ace-0.3.2.tgz
 
 - 内部生成 3–5 个不同方向：推进、用现成工具、重新框定、验证、澄清、收范围、收尾。
 - 按 `value`、`novelty`、`worth_extra_step` 和动作类型打分。
+- **看人下菜：** 卡片会读用户自己的话判断技术程度——新手用日常语言、一次一个动作；工程师直接用术语。可以在插件配置里用 `level` 强制指定。
 - 默认模式预测的是**你本来就要打的那句话**：每张卡必须引用助手最后一句里被回应的原文片段，打分也偏向真的在回应的那张。
 - 每张卡要带一个**用户自己想不出来的洞见**——被穿过的模块边界、该拆开的两个概念、这个领域里常见的失败模式——`insight` 单独打分，不混在 `novelty` 里。
 - 同时它是一句能直接开工的技术指令：点名文件、命令、参数或验收点，`why` 说明这条推理从哪来。
