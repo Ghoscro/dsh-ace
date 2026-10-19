@@ -1047,7 +1047,7 @@ export function predictLocal(draft, maxChars = 2) {
       // Fall back to one character of context: a rare pair should still emit
       // something short rather than nothing.
       bag = singleTable.get(context.slice(-1))
-      threshold = 0.2
+      threshold = 0.12
     }
     if (!bag) break
     let best = ''
@@ -2161,7 +2161,10 @@ export async function streamInlineCompletion(ctx, config, input, onDelta, signal
     messages: [{ role: 'user', content: [{ type: 'text', text: prompt.user }], source: { kind: 'user' } }],
     temperature: 0.5,
     maxTokens: 1200,
-    reasoningEffort: 'none',
+    // No forced reasoning effort: DSH rejects an id the model does not list
+    // (UNSUPPORTED_REASONING_EFFORT), which surfaced as `finish=error` and an
+    // empty ghost.
+    ...(config.inlineReasoningEffort ? { reasoningEffort: config.inlineReasoningEffort } : {}),
     signal,
   })
   const iterator = iterable[Symbol.asyncIterator]()
@@ -2219,7 +2222,7 @@ export async function generateInlineCompletion(ctx, config, input, signal) {
       ...config,
       maxTokens: Math.max(400, config.inlineMaxTokens),
       temperature: 0.5,
-      reasoningEffort: 'none',
+      ...(config.inlineReasoningEffort ? { reasoningEffort: config.inlineReasoningEffort } : {}),
     }, controller.signal)
     const limit = clampInt(input.maxChars, 2, 20, 12)
     return { completion: cleanInline(result.text, input.draft).slice(0, limit), model: `${route.provider}/${route.model}`, usage: result.usage }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.18 — 2026-10-19
+
+- Fix: the inline route forced `reasoningEffort: 'none'`, which DSH rejects with
+  `UNSUPPORTED_REASONING_EFFORT` for any model that does not list that exact id.
+  That was the `finish=error` behind the empty ghost. The effort is now passed
+  only when `inlineReasoningEffort` is configured.
+- Local unigram threshold lowered to 0.12 so a rare pair still emits a character.
+- A stream error prints `[err:...]` on the same trace line.
+
 ## 0.5.17 — 2026-10-19
 
 - Fix: the key handler never found the textarea because the shipped web build
