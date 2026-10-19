@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.7 — 2026-10-19
+
+- Fix: the host read `DSH_HOME` from the environment only. Launched from the GUI
+  it is unset, which silently disabled the local model, the user profile, the
+  rejection log and the sample capture at once. Every path now falls back to
+  `~/.dsh`.
+- Fix: inline completion spent its whole 120-token budget on reasoning and
+  returned no text (`finish=max-tokens`), which looked like "no ghost at all".
+  It now runs with `reasoningEffort: 'none'` and a 400-token floor.
+- `/composer-predict/local` accepts `debug: true` and reports corpus size,
+  context count and build errors.
+
 ## 0.5.6 — 2026-10-19
 
 - Ghost text is prefetched while typing instead of after a three-second pause: a

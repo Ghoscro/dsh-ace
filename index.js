@@ -12,6 +12,7 @@
 
 import { execFile } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { zstdDecompressSync } from 'node:zlib'
 
@@ -813,7 +814,7 @@ let profileCache = { path: '', mtimeMs: -1, summary: '' }
  * @returns {string} the summary, or an empty string when no profile exists.
  */
 export function readUserProfile() {
-  const home = process.env.DSH_HOME
+  const home = (process.env.DSH_HOME || join(homedir(), '.dsh'))
   if (!home) return ''
   const path = join(home, 'diagnostics', 'ace-profile.json')
   try {
@@ -831,7 +832,7 @@ export function readUserProfile() {
 
 /** Rejected cards: the user's real preference lives in what they kill. */
 function rejectLogPath() {
-  const home = process.env.DSH_HOME
+  const home = (process.env.DSH_HOME || join(homedir(), '.dsh'))
   return home ? join(home, 'diagnostics', 'ace-rejects.jsonl') : ''
 }
 
@@ -972,35 +973,49 @@ function humanMessages(home, limitFiles = 300) {
 
 function buildLocalModel() {
   if (localModel.built) return localModel.next
-  localModel.built = true
-  const home = process.env.DSH_HOME
+  const home = (process.env.DSH_HOME || join(homedir(), '.dsh'))
   if (!home) return null
-  const messages = humanMessages(home)
-  if (messages.length < 20) return null
-  const next = new Map()
-  for (const raw of messages) {
-    // Code blocks, URLs and quoted payloads teach the wrong next character.
-    const text = raw
-      .replace(/```[\s\S]*?```/g, ' ')
-      .replace(/https?:\/\/\S+/g, ' ')
-      .replace(/["'`]/g, '')
-      .trim()
-    const chinese = (text.match(/[\u4e00-\u9fa5]/g) ?? []).length
-    if (chinese / Math.max(1, text.length) < 0.5) continue
-    const padded = '\u0002\u0002' + text.replace(/\s+/g, '') + '\u0003'
-    for (let index = 2; index < padded.length; index += 1) {
-      const context = padded.slice(index - 2, index)
-      const char = padded[index]
-      let bag = next.get(context)
-      if (!bag) {
-        bag = new Map()
-        next.set(context, bag)
-      }
-      bag.set(char, (bag.get(char) ?? 0) + 1)
+  try {
+    const messages = humanMessages(home)
+    if (messages.length < 20) {
+      localModel.built = true
+      localModel.next = null
+      localModel.messages = messages.length
+      return null
     }
+    const next = new Map()
+    for (const raw of messages) {
+      // Code blocks, URLs and quoted payloads teach the wrong next character.
+      const text = raw
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/https?:\/\/\S+/g, ' ')
+        .replace(/["'`]/g, '')
+        .trim()
+      const chinese = (text.match(/[\u4e00-\u9fa5]/g) ?? []).length
+      if (chinese / Math.max(1, text.length) < 0.5) continue
+      const padded = '\u0002\u0002' + text.replace(/\s+/g, '') + '\u0003'
+      for (let index = 2; index < padded.length; index += 1) {
+        const context = padded.slice(index - 2, index)
+        const char = padded[index]
+        let bag = next.get(context)
+        if (!bag) {
+          bag = new Map()
+          next.set(context, bag)
+        }
+        bag.set(char, (bag.get(char) ?? 0) + 1)
+      }
+    }
+    localModel.built = true
+    localModel.next = next
+    localModel.messages = messages.length
+    localModel.contexts = next.size
+    return next
+  } catch (error) {
+    // Leave `built` false: a transient read failure must not disable the model
+    // for the life of the process.
+    localModel.error = String(error?.message ?? error).slice(0, 200)
+    return null
   }
-  localModel.next = next
-  return next
 }
 
 /**
@@ -1638,7 +1653,7 @@ export function usageCost(usage, pricing) {
  */
 export function captureSample(sample, options = {}) {
   try {
-    const home = process.env.DSH_HOME
+    const home = (process.env.DSH_HOME || join(homedir(), '.dsh'))
     if (!home) return
     const directory = join(home, 'diagnostics')
     mkdirSync(directory, { recursive: true })
@@ -1823,7 +1838,7 @@ export function ingestLedger({ dir, sessionId, transcript, maxEntries = 160, kee
 
 export function logUsage(event) {
   try {
-    const home = process.env.DSH_HOME
+    const home = (process.env.DSH_HOME || join(homedir(), '.dsh'))
     if (!home) return
     const directory = join(home, 'diagnostics')
     mkdirSync(directory, { recursive: true })
@@ -1905,7 +1920,7 @@ function usageIndex(directory) {
  */
 function logPredictionEvent(event) {
   try {
-    const home = process.env.DSH_HOME
+    const home = (process.env.DSH_HOME || join(homedir(), '.dsh'))
     if (!home) return
     const directory = join(home, 'diagnostics')
     mkdirSync(directory, { recursive: true })
@@ -2105,9 +2120,26 @@ async function rewriteWithoutBanned(ctx, route, config, input, text, signal) {
 export async function generateInlineCompletion(ctx, config, input, signal) {
   const route = resolveModel(ctx, config)
   const prompt = buildInlinePrompt({ ...input, profile: readUserProfile() })
-  const result = await callExpertStage(ctx, route, prompt, config, config.inlineTimeoutMs, config.inlineMaxTokens, signal)
-  const limit = clampInt(input.maxChars, 2, 20, 12)
-  return { completion: cleanInline(result.text, input.draft).slice(0, limit), model: `${route.provider}/${route.model}`, usage: result.usage }
+  const controller = new AbortController()
+  const forward = () => controller.abort(signal.reason)
+  if (signal.aborted) forward()
+  else signal.addEventListener('abort', forward, { once: true })
+  const timer = setTimeout(() => controller.abort(new Error('inline timed out')), config.inlineTimeoutMs)
+  try {
+    // Reasoning models burn the whole budget thinking: this route needs the
+    // answer, not the deliberation, so reasoning is off and the cap is generous.
+    const result = await streamOnce(ctx, route, prompt, {
+      ...config,
+      maxTokens: Math.max(400, config.inlineMaxTokens),
+      temperature: 0.5,
+      reasoningEffort: 'none',
+    }, controller.signal)
+    const limit = clampInt(input.maxChars, 2, 20, 12)
+    return { completion: cleanInline(result.text, input.draft).slice(0, limit), model: `${route.provider}/${route.model}`, usage: result.usage }
+  } finally {
+    clearTimeout(timer)
+    signal.removeEventListener('abort', forward)
+  }
 }
 
 export async function generateExpertPrediction(ctx, config, input, signal) {
@@ -2115,7 +2147,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   const mode = resolveMode(input.style ?? input.mode)
   const maxTokens = Math.min(config.expertMaxTokens, MODE_MAX_TOKENS[mode])
   const evidence = await collectEvidence(input.cwd ?? '')
-  const home = process.env.DSH_HOME
+  const home = (process.env.DSH_HOME || join(homedir(), '.dsh'))
   const ingested = config.ledger && home
     ? ingestLedger({
       dir: join(home, 'diagnostics'),
@@ -2366,7 +2398,16 @@ export async function handleRequest(ctx, config, inflight, req, res) {
     const payload = body && typeof body === 'object' ? body : {}
     const draft = typeof payload.draft === 'string' ? payload.draft.slice(0, 500) : ''
     const maxChars = clampInt(payload.maxChars, 1, 6, 2)
-    sendJson(res, 200, { ok: true, value: { completion: draft.trim() === '' ? '' : predictLocal(draft, maxChars) } })
+    const completion = draft.trim() === '' ? '' : predictLocal(draft, maxChars)
+    const debug = payload.debug === true
+      ? {
+        built: localModel.built,
+        messages: localModel.messages ?? 0,
+        contexts: localModel.contexts ?? 0,
+        error: localModel.error ?? '',
+      }
+      : undefined
+    sendJson(res, 200, { ok: true, value: { completion, ...(debug ? { debug } : {}) } })
     return
   }
   if (url.pathname === `${config.routePrefix}/inline`) {
