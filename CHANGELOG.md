@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.16 — 2026-10-19
+
+- The trace is anchored at the bottom-left and opens with a boot line carrying
+  the build version, so a stale bundle is visible before any keypress.
+- F1, backquote and Ctrl/Cmd+Space all toggle the ghost. The key handler no
+  longer requires the composer to be the active element, and a press that finds
+  no textarea still logs `[无输入框]` instead of doing nothing.
+
 ## 0.5.15 — 2026-10-19
 
 - The four lamps became a text trace under the composer: every F1 press appends

@@ -11,7 +11,7 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.15'
+const ACE_VERSION = '0.5.16'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -607,7 +607,6 @@ function apply(ctx) {
 
       const renderTrace = () => {
         if (typeof document === 'undefined') return
-        const element = textareaOf()
         if (rounds.length === 0) {
           if (traceLayer) traceLayer.style.display = 'none'
           return
@@ -618,23 +617,33 @@ function apply(ctx) {
           traceLayer.setAttribute('aria-hidden', 'true')
           document.body.appendChild(traceLayer)
         }
-        if (!element) {
-          traceLayer.style.display = 'none'
-          return
-        }
-        const rect = element.getBoundingClientRect()
-        traceLayer.style.left = `${Math.max(0, rect.left + 4)}px`
-        traceLayer.style.top = `${Math.max(0, rect.bottom + 24)}px`
+        // Fixed anchor, not relative to the textarea: the trace has to be
+        // readable even when the key handler cannot find the composer.
+        traceLayer.style.left = '16px'
+        traceLayer.style.bottom = '112px'
+        traceLayer.style.top = 'auto'
         traceLayer.style.display = 'block'
         traceLayer.replaceChildren(...rounds.map(round => {
           const line = document.createElement('div')
-          line.textContent = `${clock(round.at)} 键${round.key ? '✓' : '空'} 展开${round.expanded ? '✓' : '空'} 本地${round.local ? '✓' : '空'} 模型${round.model ? '✓' : '空'}`
+          if (round.boot) {
+            line.textContent = `${clock(round.at)} 启动 ${ACE_VERSION}`
+            return line
+          }
+          const target = round.input ? '' : ' [无输入框]'
+          line.textContent = `${clock(round.at)} 键${round.key ? '✓' : '空'} 展开${round.expanded ? '✓' : '空'} 本地${round.local ? '✓' : '空'} 模型${round.model ? '✓' : '空'}${target}`
           return line
         }))
       }
 
-      const pushRound = () => {
-        rounds.push({ at: new Date(), key: true, expanded, local: chain.local, model: chain.model })
+      const pushRound = input => {
+        rounds.push({ at: new Date(), key: true, expanded, local: chain.local, model: chain.model, input })
+        if (rounds.length > 8) rounds.shift()
+        renderTrace()
+      }
+
+      // Boot line: proves which build is actually mounted before any keypress.
+      const pushBoot = () => {
+        rounds.push({ at: new Date(), boot: true })
         if (rounds.length > 8) rounds.shift()
         renderTrace()
       }
@@ -836,19 +845,22 @@ function apply(ctx) {
 
       const onKeyDown = event => {
         const element = textareaOf()
-        // F1 toggles the ghost. Capture phase plus stopPropagation keeps the
-        // help pane (browser or Electron menu) from opening on the same press.
-        if (event.key === 'F1' && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
-          if (element && document.activeElement === element) {
-            event.preventDefault()
-            event.stopPropagation()
-            chain.key = true
+        // Any of these toggles the ghost. F1 is the primary; the others are
+        // fallbacks for hosts or IMEs that swallow one of them.
+        const toggleKey = (event.key === 'F1' && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey)
+          || (event.code === 'Backquote' && !event.shiftKey && !event.altKey)
+          || (event.code === 'Space' && (event.ctrlKey || event.metaKey))
+        if (toggleKey) {
+          event.preventDefault()
+          event.stopPropagation()
+          chain.key = true
+          pushRound(Boolean(element))
+          if (element) {
             expanded = !expanded
             chain.expanded = expanded
-            pushRound()
             paint(element.value)
-            return
           }
+          return
         }
         if (event.key !== 'Tab' || !completion || !expanded) return
         if (!element || document.activeElement !== element) return
@@ -868,6 +880,7 @@ function apply(ctx) {
         if (event.target === textareaOf()) hide()
       }
 
+      pushBoot()
       document.addEventListener('input', onInput, true)
       document.addEventListener('keydown', onKeyDown, true)
       document.addEventListener('focusout', onFocusOut, true)
