@@ -1,6 +1,6 @@
 {
   "name": "@ghoscro/dsh-ace",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "private": false,
   "description": "An AI next-move advisor for DeepSeek Harness. Find a better next step, then press Tab to make it yours.",
   "type": "module",

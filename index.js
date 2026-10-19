@@ -230,7 +230,7 @@ export function normalizeConfig(config = {}) {
       ? source.expertReasoningEffort
       : 'low',
     expertSituationTimeoutMs: clampInt(source.expertSituationTimeoutMs, 5000, 30000, 12_000),
-    expertMovesTimeoutMs: clampInt(source.expertMovesTimeoutMs, 8000, 45000, 25_000),
+    expertMovesTimeoutMs: clampInt(source.expertMovesTimeoutMs, 8000, 90000, 45_000),
     // Ghost-text completion: one short call, low latency budget.
     inlineMaxTokens: clampInt(source.inlineMaxTokens, 24, 400, 120),
     inlineTimeoutMs: clampInt(source.inlineTimeoutMs, 2000, 20_000, 6000),
@@ -1082,6 +1082,12 @@ export function salvageExpertText(text) {
     .replace(/^\s*(?:-{3,}|#{1,6}\s*$)/gm, '')
     .trim()
   if (cleaned.length < 40) return null
+  // A truncated JSON object only becomes a card when a complete `text` field
+  // survived; half an object is not a card (it shipped 77 chars of `{"text":`).
+  if (cleaned.startsWith('{') && !cleaned.endsWith('}')) {
+    const match = cleaned.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+    if (!match || match[1].length < 20) return null
+  }
   return {
     text: clip(cleaned, 2000),
     why: '', evidence: '', risk: '',
@@ -2181,7 +2187,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     if (signal.aborted) throw abortError(signal, 'expert stage aborted')
     const retryPrompt = buildSingleMovePrompt({ ...input, mode, level, evidence, situation, profile: readUserProfile(), rejects: rejectsBlock() })
     result = await callExpertStage(
-      ctx, route, retryPrompt, config, Math.min(12_000, config.expertMovesTimeoutMs), 1400, signal,
+      ctx, route, retryPrompt, config, Math.min(30_000, config.expertMovesTimeoutMs), 3000, signal,
     )
     try {
       selection = parseExpertSelection(result.text, 5)

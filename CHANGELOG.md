@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.8 — 2026-10-19
+
+- Fix: a truncated JSON answer shipped as a card (`{"text":"...` 77 chars). The
+  salvage path now requires a complete `text` field before half an object can
+  become a card; otherwise the turn stays quiet.
+- The expert call gets a real budget: 45s instead of 25s (the first attempt was
+  timing out on a wild card), and the retry gets 30s / 3000 tokens instead of
+  12s / 1400, which a reasoning model was spending before writing any JSON.
+
 ## 0.5.7 — 2026-10-19
 
 - Fix: the host read `DSH_HOME` from the environment only. Launched from the GUI

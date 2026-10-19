@@ -513,6 +513,14 @@ test('a truncated JSON answer is salvaged and a short garbage answer is not', as
   assert.equal(fallback.mode, 'fast-fallback')
 })
 
+test('half a JSON object is not a card', () => {
+  // The 77-char `{"text":"` fragment that shipped as a card on 2026-10-19.
+  const fragment = '{"text":"先做个灰盒，把三个决策点画在纸上，再让另一个 AI 把它写成规则表，顺便生成一份情绪板'
+  assert.ok(fragment.length > 40)
+  assert.equal(salvageExpertText(fragment), null)
+  assert.equal(salvageExpertText('{"text":"'), null)
+})
+
 test('the output contract sits before the transcript so a long prompt cannot bury it', () => {
   const input = { transcript: [{ role: 'user', text: '随便' }], count: 4, locale: 'zh-CN', mode: 'wild' }
   for (const prompt of [buildExpertPrompt(input), buildSingleMovePrompt(input)]) {
