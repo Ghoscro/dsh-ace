@@ -216,13 +216,31 @@ test('the type scale is written to the document root at runtime', () => {
   assert.equal(rootStyle.values['--dsh-fs-x'], '12px')
 })
 
-test('the dock width follows the composer card and never exceeds its seat', () => {
+test('the dock insets follow the composer card edges, not only its width', () => {
   const { exports } = loadClient()
-  const dockWidth = exports.__test.dockWidth
-  assert.equal(dockWidth(780, 1400), 780)
-  assert.equal(dockWidth(780, 400), 400)
-  assert.equal(dockWidth(0, 400), 0)
-  assert.equal(dockWidth(Number.NaN, 400), 0)
+  const insets = (card, seat) => JSON.parse(JSON.stringify(exports.__test.dockInsets(card, seat)))
+  // Symmetric padding: both sides inset by the same amount.
+  assert.deepEqual(insets({ left: 100, right: 880 }, { left: 80, right: 900 }), { left: 20, right: 20 })
+  // Asymmetric padding: the two insets differ and both are kept.
+  assert.deepEqual(insets({ left: 100, right: 860 }, { left: 80, right: 900 }), { left: 20, right: 40 })
+  // A card wider than the seat never produces negative margins.
+  assert.deepEqual(insets({ left: 60, right: 940 }, { left: 80, right: 900 }), { left: 0, right: 0 })
+  // Missing rects collapse to zero instead of NaN.
+  assert.deepEqual(insets({}, {}), { left: 0, right: 0 })
+})
+
+test('asymmetric composer rects publish 20/40 on the document root', () => {
+  // Regression pin for b538fd7 / f601d22: equal width is not aligned edges.
+  const { exports, document, rootStyle } = loadClient()
+  const seat = { getBoundingClientRect: () => ({ left: 100, right: 900, width: 800 }) }
+  const card = {
+    getBoundingClientRect: () => ({ left: 120, right: 860, width: 740 }),
+    closest: () => seat,
+  }
+  document.querySelector = selector => (selector === '[data-composer-card]' ? card : null)
+  exports.__test.applyComposerInsets()
+  assert.equal(rootStyle.values['--dsh-ace-inset-left'], '20px')
+  assert.equal(rootStyle.values['--dsh-ace-inset-right'], '40px')
 })
 
 test('the type scale clamps and stays proportional', () => {

@@ -904,6 +904,15 @@ test('client.js never hard-codes a pixel font size', () => {
   assert.deepEqual(hits, [], `hard-coded font sizes must use CSS variables: ${hits.join(', ')}`)
 })
 
+test('client.js never regrows a dock width rule or a copied max-width', () => {
+  // Pins b538fd7 (copied TodoPanel calc) and f601d22 (equal width is not
+  // aligned edges). Width comes from the seat; edges come from measured insets.
+  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /max-width/i, 'max-width must not come back')
+  assert.doesNotMatch(source, /--dsh-ace-width/, 'the width variable must stay gone')
+  assert.doesNotMatch(source, /748/, 'no hard-coded 748 dock width')
+})
+
 test('the evidence pack carries project shape, not only a diff', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ace-shape-'))
   mkdirSync(join(dir, 'src'), { recursive: true })
