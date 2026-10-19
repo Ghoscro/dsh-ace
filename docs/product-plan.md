@@ -124,3 +124,9 @@ ACE 负责：明确展示准备填入或交接的内容；不把猜测伪装成�
 ACE is a way to discover ideas outside the user's current frame, not merely predict their intended message. Bold analogies and the four equal-strength modes remain.
 Cards now distinguish attributed observations, untested hypotheses, transferable analogies, and concrete validation ideas. Sources are displayed as not independently verified; missing sources are never invented or promoted into facts. Falsifiers must weaken the actual hypothesis rather than rescue it circularly. Tab still inserts only the optional action, never sends the analysis.
 Legacy cards remain readable, with their explanation explicitly labeled as an untested interpretation. These labels do not mechanically prove model claims true.
+
+## 0.5.22 — repair inference without shrinking the idea
+
+Each selected expert card receives one bounded reasoning edit, including prose recovery. The edit preserves the creative mechanism and analogy domain, and changes causal claims across the entire card. The response carries an exact source quote, a competing explanation, distinct supporting/weakening observations, and unresolved possibilities. Analogies are explicitly imagined situations.
+
+Missing grounding and known unsupported exclusions reject the card. A failed edit is visible and does not become ordinary completion. This adds a model call and latency. Structural guards and model editing are limited checks, not independent fact verification or a proof that every inference is valid.

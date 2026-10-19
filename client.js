@@ -11,12 +11,13 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.21'
+const ACE_VERSION = '0.5.22'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
 
 const zh = {
+  alternative: '另一种解释：', supports: '若观察到：', unresolved: '仍不能排除：', quote: '原话：', imagined: '举一反三（假想场景）：', reviewFailed: '推理校核未完成，没有改成普通补全。可以重试。',
   fact: '已有观察：', factSource: '出处（未独立核验）：', hypothesis: '推想（待验证）：', verification: '验证思路：', mechanism: '机制联想：',
   title: '深度预测', loading: '正在预测下一句…', refresh: '重新推演', close: '关闭深度预测',
   error: '深度预测失败', retry: '重试', inserted: '深度预测建议已填入',
@@ -33,6 +34,7 @@ const zh = {
   mode: '模式', mode_safe: '保守安全', mode_standard: '常规推理', mode_brainstorm: '脑暴思维', mode_wild: '王牌预测',
 }
 const en = {
+  alternative: 'Alternative: ', supports: 'Supporting outcome: ', unresolved: 'Still unresolved: ', quote: 'Quoted source: ', imagined: 'Transfer (imagined scenario): ', reviewFailed: 'Reasoning review could not complete. No ordinary completion was substituted. Retry is available.',
   fact: 'Observation: ', factSource: 'Source (not independently verified): ', hypothesis: 'Hypothesis (untested): ', verification: 'How to test: ', mechanism: 'Mechanism analogy: ',
   title: 'ACE Move', loading: 'ACE is predicting your next move…', refresh: 'Think again',
   close: 'Dismiss ACE', error: 'ACE failed',
@@ -439,6 +441,7 @@ function apply(ctx) {
             relation: str('relation'),
             falsify: str('falsify'),
             fact: str('fact'), fact_source: str('fact_source'),
+            fact_quote: str('fact_quote'), alternative: str('alternative'), supports: str('supports'), unresolved: str('unresolved'),
             hypothesis: str('hypothesis'), verification: str('verification'),
             now: str('now'),
             goal: str('goal'),
@@ -446,7 +449,7 @@ function apply(ctx) {
           }
         }).filter(Boolean).slice(0, count)
         if (candidates.length === 0) {
-          store.set({ status: 'idle', candidates: [], model: payload.value?.model ?? '', mode: payload.value?.mode ?? mode })
+          store.set({ status: payload.value?.warning ? 'error' : 'idle', candidates: [], error: payload.value?.warning ? 'reviewFailed' : '', model: payload.value?.model ?? '', mode: payload.value?.mode ?? mode })
           return
         }
         const end = readTurnEnd()
@@ -1121,6 +1124,10 @@ function apply(ctx) {
       const factSource = field('fact_source')
       const hypothesis = field('hypothesis')
       const verification = field('verification')
+      const factQuote = field('fact_quote')
+      const alternative = field('alternative')
+      const supports = field('supports')
+      const unresolved = field('unresolved')
       const now = field('now')
       const goal = field('goal')
       const outcome = field('outcome')
@@ -1150,17 +1157,21 @@ function apply(ctx) {
           React.createElement('span', { className: 'dcp-beat' }, t('outcome')), outcome) : null,
         fact && factSource ? React.createElement('span', { className: 'dcp-fact' },
           React.createElement('span', { className: 'dcp-beat' }, t('fact')), fact,
-          React.createElement('span', { className: 'dcp-meta' }, t('factSource') + factSource)) : null,
+          React.createElement('span', { className: 'dcp-meta' }, t('factSource') + factSource),
+          factQuote ? React.createElement('span', { className: 'dcp-meta' }, t('quote') + factQuote) : null) : null,
         line ? React.createElement('span', { className: 'dcp-why' },
           React.createElement('span', { className: 'dcp-beat' }, t(hypothesis ? 'mechanism' : 'hypothesis')), line) : null,
         hypothesis ? React.createElement('span', { className: 'dcp-hypothesis' },
           React.createElement('span', { className: 'dcp-beat' }, t('hypothesis')), hypothesis) : null,
+        alternative ? React.createElement('span', { className: 'dcp-alternative' }, t('alternative'), alternative) : null,
         z ? React.createElement('span', { className: 'dcp-z' },
-          React.createElement('span', { className: 'dcp-beat' }, t('beatZ')), z) : null,
+          React.createElement('span', { className: 'dcp-beat' }, t(factQuote ? 'imagined' : 'beatZ')), z) : null,
         relation ? React.createElement('span', { className: 'dcp-rel' },
           React.createElement('span', { className: 'dcp-beat' }, t('relation')), relation) : null,
         verification ? React.createElement('span', { className: 'dcp-verification' },
           React.createElement('span', { className: 'dcp-beat' }, t('verification')), verification) : null,
+        supports ? React.createElement('span', { className: 'dcp-supports' }, t('supports'), supports) : null,
+        unresolved ? React.createElement('span', { className: 'dcp-unresolved' }, t('unresolved'), unresolved) : null,
         React.createElement('span', { className: 'dcp-text' }, text),
         meta ? React.createElement('span', { className: 'dcp-meta' }, meta) : null))
     })
@@ -1238,7 +1249,7 @@ function apply(ctx) {
       : null,
     state.status === 'error'
       ? React.createElement('div', { className: 'dcp-error' },
-        React.createElement('span', { title: state.error }, `${t('error')}：${state.error}`),
+        React.createElement('span', { title: state.error }, `${t('error')}：${state.error === 'reviewFailed' ? t('reviewFailed') : state.error}`),
         React.createElement('button', {
           type: 'button', className: 'dcp-icon', title: t('retry'), 'aria-label': t('retry'), onClick: refresh,
         }, '↻'))

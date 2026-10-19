@@ -85,7 +85,7 @@ These are examples, not a controlled benchmark. They show the kind of added valu
 ### 1. A test that may be hiding the bug
 
 - **Obvious:** “Run the full suite.”
-- **ACE Move:** “Remove the retry and run this one test once; if it fails, the retry was masking the race.”
+- **ACE Move:** “Remove the retry and run this one test once; compare repeated runs with and without retries; a higher failure rate would support the masking hypothesis.”
 - **What it adds:** it tests the mechanism instead of increasing the sample size.
 - **Risk:** the test may fail for an unrelated reason.
 
@@ -127,8 +127,8 @@ The parser scans balanced JSON objects and skips a truncated or malformed line w
 - **Ledger:** each session keeps an append-only record of what the predictor saw; the prompt is rebuilt from it, so the prefix only grows, and past `ledgerMaxEntries` the oldest part is written to an archive file and replaced by a deterministic digest. `ledger: false` turns it off.
 - **Samples:** the last 50 expert predictions (candidate moves, the raw answer, the last user line) stay in `diagnostics/dsh-ace-samples.jsonl`; `npm run sweep` re-scores them offline at every threshold, with no model calls.
 - **Accounting:** every prediction appends one row to `diagnostics/dsh-ace-usage.jsonl` with the session, turn index, token counts, cache hits and a priced cost using the configurable `pricing` block.
-- **Cost:** one model call per ACE suggestion. At the default prices and a measured 5.0–5.6k-character prompt (0.4.0 was 2.4–3.0k), one suggestion is roughly **$0.0006–0.0018**; a prefix-cache hit cuts the input side by about 10x. The output caps are `safe` 2200, `standard` 4000, `brainstorm` 5600, `wild` 6000 tokens.
-- **What it costs you per turn:** automatic ACE is one call per completed turn; pause it and only the ✦ click costs anything. Automatic ACE is the expensive mode; pause it if you only want it on demand.
+- **Cost:** normally two model calls per ACE card: candidate generation and one bounded reasoning review. Recovery may add a generation retry. Earlier single-call price estimates no longer apply; review adds tokens and latency. Output caps for generation remain `safe` 2200, `standard` 4000, `brainstorm` 5600, `wild` 6000 tokens.
+- **Automatic ACE:** generates and reviews a card after each completed turn. Pause it to use only the ✦ button.
 
 ## Development
 

@@ -4,6 +4,7 @@ import { Readable } from 'node:stream'
 import { mkdtempSync, readFileSync, mkdirSync, writeFileSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { reviewFixture } from './review-fixture.mjs'
 import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
@@ -97,6 +98,11 @@ test('resolveModel prefers config, then the agent default, then the account fall
 function llmReturning(text, calls = { count: 0 }) {
   return {
     stream(options) {
+      const review = reviewFixture(options)
+      if (review) {
+        calls.reviewCount = (calls.reviewCount || 0) + 1
+        return (async function* () { yield { type: 'text-delta', text: review } })()
+      }
       calls.count += 1
       assert.equal(typeof options.maxTokens, 'number')
       return (async function* stream() {
@@ -109,7 +115,12 @@ function llmReturning(text, calls = { count: 0 }) {
 
 function llmSequence(texts, calls = { count: 0 }) {
   return {
-    stream() {
+    stream(options) {
+      const review = reviewFixture(options)
+      if (review) {
+        calls.reviewCount = (calls.reviewCount || 0) + 1
+        return (async function* () { yield { type: 'text-delta', text: review } })()
+      }
       const text = texts[Math.min(calls.count, texts.length - 1)]
       calls.count += 1
       return (async function* stream() {
@@ -249,7 +260,7 @@ test('selectBestMove picks the higher-value move, not the first slot', () => {
   assert.equal(selectBestMove(low, 5), null)
 })
 
-test('generateExpertPrediction uses deterministic situation and one model call', async () => {
+test('generateExpertPrediction uses one candidate call and one bounded review', async () => {
   const calls = { count: 0 }
   const ctx = { get: () => undefined, llm: llmSequence([EXPERT_JSONL], calls) }
   const result = await generateExpertPrediction(ctx, normalizeConfig(), {
@@ -263,17 +274,19 @@ test('generateExpertPrediction uses deterministic situation and one model call',
   assert.equal(result.candidates[0].text, '先把重试去掉跑一次，确认不是重试掩盖了竞态')
   assert.equal(result.candidates[0].why.includes('直接验证根因'), true)
   assert.equal(calls.count, 1)
+  assert.equal(calls.reviewCount, 1)
 })
 
-test('generatePrediction falls back to fast when expert retry is unusable', async () => {
+test('generatePrediction preserves expert mode with a visible failure rather than ordinary completion', async () => {
   const calls = { count: 0 }
   const ctx = { get: () => undefined, llm: llmSequence(['not json', 'not json', '["回退一下"]'], calls) }
   const result = await generatePrediction(ctx, normalizeConfig(), {
     transcript: [{ role: 'user', text: '继续' }], count: 2, cwd: '', locale: 'zh-CN', mode: 'expert',
   }, new AbortController().signal)
-  assert.equal(result.mode, 'fast-fallback')
-  assert.deepEqual(result.candidates, ['回退一下'])
-  assert.equal(calls.count, 3)
+  assert.equal(result.mode, 'expert')
+  assert.deepEqual(result.candidates, [])
+  assert.match(result.warning, /could not complete/)
+  assert.equal(calls.count, 2)
 })
 
 test('generateExpertPrediction retries once with a compact one-object prompt', async () => {
@@ -429,6 +442,8 @@ function llmCapturing(text, seen) {
   return {
     stream(options) {
       seen.push(options)
+      const review = reviewFixture(options)
+      if (review) return (async function* () { yield { type: 'text-delta', text: review } })()
       return (async function* stream() {
         yield { type: 'text-delta', text }
         yield { type: 'finish', reason: { kind: 'stop' } }
@@ -492,7 +507,8 @@ test('a long prose answer is salvaged instead of failing the card', async () => 
   assert.equal(result.salvaged, true)
   assert.equal(result.candidates.length, 1)
   assert.match(result.candidates[0].text, /灰盒规则/)
-  assert.match(result.warning, /structured JSON/)
+  assert.equal(result.candidates[0].claimReviewed, true, 'prose recovery cannot bypass reasoning review')
+  assert.equal(calls.reviewCount, 1)
 })
 
 test('a truncated JSON answer is salvaged and a short garbage answer is not', async () => {
@@ -510,7 +526,8 @@ test('a truncated JSON answer is salvaged and a short garbage answer is not', as
   const fallback = await generatePrediction(junk, normalizeConfig(), {
     transcript: [{ role: 'user', text: '继续' }], count: 2, cwd: '', locale: 'zh-CN', mode: 'expert',
   }, new AbortController().signal)
-  assert.equal(fallback.mode, 'fast-fallback')
+  assert.equal(fallback.mode, 'expert')
+  assert.equal(fallback.candidates.length, 0)
 })
 
 test('half a JSON object is not a card', () => {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.22 — 2026-10-19
+
+- Review every selected expert card, including recovered prose, before display; preserve its creative mechanism while repairing causal jumps across all visible fields.
+- Require a verbatim source quote, explicitly imagined analogy, competing explanation, supporting and weakening observations, and unresolved uncertainty.
+- Reject missing grounding and known unsupported exclusions; review failure stays visible without falling back to ordinary completion.
+- The bounded review adds a model call and latency. It is not independent fact checking or a guarantee of logical validity.
+
 ## 0.5.21 — 2026-10-19
 
 - Preserve bold cross-domain exploration while separating sourced observations, untested hypotheses, and validation ideas in generated cards.
