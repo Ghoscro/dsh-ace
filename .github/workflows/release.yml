@@ -25,3 +25,23 @@ jobs:
         with:
           files: ghoscro-dsh-ace-*.tgz
           generate_release_notes: true
+
+  verify-release:
+    needs: pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --include=dev --ignore-scripts
+      - name: Pack the tagged commit
+        run: npm pack --pack-destination "$RUNNER_TEMP/fresh"
+      - name: Download the published asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$GITHUB_REF_NAME" --pattern '*.tgz' --dir "$RUNNER_TEMP/published"
+      - name: Compare the release with this commit
+        run: node scripts/compare-release.mjs "$RUNNER_TEMP/fresh" "$RUNNER_TEMP/published"

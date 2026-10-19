@@ -21,7 +21,7 @@ The npm name `dsh-ace` is taken by an unrelated project, so the package is scope
 
 ```bash
 # in the DSH profile directory
-pnpm add file:/absolute/path/to/ghoscro-dsh-ace-0.3.0.tgz
+pnpm add file:/absolute/path/to/ghoscro-dsh-ace-0.3.1.tgz
 ```
 
 Then add `"@ghoscro/dsh-ace"` to `dsh.profile.bundles`, materialize the profile (DSH plugin page or `pnpm install`), and restart DSH. The composer row shows **✦ ACE** (**✦ 深度预测** in the Chinese UI).

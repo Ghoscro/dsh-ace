@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 — 2026-10-19
+
+- The release workflow now verifies itself: after publishing, it downloads the
+  asset it just uploaded and compares it file by file against a fresh `npm pack`
+  of the tagged commit. A stale release (v0.2.0 shipped one) fails the build.
+
 ## 0.3.0 — 2026-10-19
 
 - Fixed: the host half is a single file again. Adding a sibling module
