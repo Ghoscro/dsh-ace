@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.21 — 2026-10-19
+
+- Preserve bold cross-domain exploration while separating sourced observations, untested hypotheses, and validation ideas in generated cards.
+- Display attribution without claiming independent verification; omit unsourced fact claims.
+- Require falsifiers that weaken the proposed hypothesis; preserve analogies and action-only Tab acceptance.
+
+
 ## 0.5.20 — 2026-10-19
 
 - Remove overlapping draft suffixes from inline output, including a repeated trailing character, before painting or accepting.

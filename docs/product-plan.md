@@ -118,3 +118,9 @@ ACE 负责：明确展示准备填入或交接的内容；不把猜测伪装成�
 - 不自动发送、不替用户执行、不把生成当执行。
 - 不写会话、不做跨会话学习、不引入遥测。
 - 不用统一的保守/简短/繁复风格施加给所有人。
+
+## 0.5.21 — evidence and exploration
+
+ACE is a way to discover ideas outside the user's current frame, not merely predict their intended message. Bold analogies and the four equal-strength modes remain.
+Cards now distinguish attributed observations, untested hypotheses, transferable analogies, and concrete validation ideas. Sources are displayed as not independently verified; missing sources are never invented or promoted into facts. Falsifiers must weaken the actual hypothesis rather than rescue it circularly. Tab still inserts only the optional action, never sends the analysis.
+Legacy cards remain readable, with their explanation explicitly labeled as an untested interpretation. These labels do not mechanically prove model claims true.

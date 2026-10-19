@@ -125,7 +125,7 @@ const ZH_EXPERT = `你是用户的专家级 next-move 顾问。不要猜最可�
 
 输出格式：每行一个 JSON 对象，不要数组、不要逗号分隔、不要 markdown、不要代码围栏。
 前 3-5 行是候选，每行：
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","now":"...","goal":"...","outcome":"..."}
+{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","fact":"...","fact_source":"...","hypothesis":"...","verification":"...","now":"...","goal":"...","outcome":"..."}
 最后一行是选择：
 {"best_index":0,"comparison":"为什么选它，其他方向差在哪"}
 
@@ -145,7 +145,7 @@ Directions include: advance the next step, use an existing tool or a cheaper pat
 
 Output format: one JSON object per line. No array, no comma-separated list, no markdown, no code fences.
 The first 3-5 lines are candidates:
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","now":"...","goal":"...","outcome":"..."}
+{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","fact":"...","fact_source":"...","hypothesis":"...","verification":"...","now":"...","goal":"...","outcome":"..."}
 The final line is the selection:
 {"best_index":0,"comparison":"why this one, and why the others are weaker"}
 
@@ -558,6 +558,13 @@ const MODE_POLICY = {
 }
 
 const MODE_DISCIPLINE = `CONTENT DISCIPLINE (every mode):
+- ACE expands the user's understanding, not merely their intended next sentence. Preserve bold hypotheses, far analogies and second/third-order possibilities in every mode's own strength. A useful insight need not be something the user already intended to send.
+- Separate epistemic roles explicitly: fact = only an observation available in THREAD/EVIDENCE; fact_source = its specific message, file or tool result. A user's/assistant's report is attributed as a report, not independently verified truth. If no source exists, leave both empty. Never invent a file, command output or source.
+- hypothesis = the NEW interpretation or possible mechanism, explicitly tentative; y may explain it but must not assert an unverified diagnosis. z/relation explain a transferable analogy; analogy is not evidence that the diagnosis is true.
+- For z, use an explicitly imagined scenario when you lack a factual source. Do not invent universal claims about science, psychology, institutions or how an industry always works just to make the analogy vivid. Mapping a mechanism does not establish causation in the current case.
+- verification = a concrete observation, comparison, experiment or prototype that distinguishes the hypothesis from alternatives. text is the user's optional action, not an assertion of consent: keep uncertain premises conditional. Do not turn every bold idea into a cautious debugging checklist; creative ideas may be tried through a vivid prototype.
+- falsify must name a result that weakens or rejects THIS hypothesis and what to reconsider. No circular rescue such as "if closing the suspected path does not help, that proves the same path is still the cause". A result consistent with a hypothesis is support, not automatic proof.
+- 中文卡片使用 fact（已有观察）、fact_source（具体出处）、hypothesis（大胆但待验证的解释）、verification（区分解释的验证动作）。类比不是根因证据；没有事实出处就留空，不编造。推翻条件必须真能让当前解释失去支持。
 - Keep three things distinguishable in why/risk: the user's stated goal, the assumptions you made to form this move, and the ideas you added. Never present an added idea as the user's own words.
 - Difficulty, cost or the chance of failure is not by itself a reason to drop a direction. Only the user's explicit limits are binding.
 - A mode never collapses into safe: when you propose a tamer move, justify it as better, not as safer.`
@@ -1186,10 +1193,10 @@ export function buildSingleMovePrompt(input) {
     .join('\n') || '(none)'
   const system = locale.startsWith('zh')
     ? `你是 ACE。先在内部比较 3 个方向（推进、用现成工具/更省事、重新框定），只输出一个最值得用户发送的 JSON 对象。没有比顺手继续更好的，就输出 {"best_index":null,"comparison":"没有更好的下一步"}。
-JSON 对象字段：text, why, evidence, risk, action, value, novelty, worth_extra_step, over_obvious, x, y, z, relation, surface_like, falsify, now, goal, outcome。
+JSON 对象字段：text, why, evidence, risk, action, value, novelty, worth_extra_step, over_obvious, x, y, z, relation, surface_like, falsify, fact, fact_source, hypothesis, verification, now, goal, outcome。
 不要数组、不要多行对象、不要 markdown。text 用用户口吻，可直接发送；why 不发送；不要编造。`
     : `You are ACE. Compare 3 directions internally (advance, existing tool/cheaper path, reframe) and output only the one JSON object most worth sending. If nothing beats the obvious next line, output {"best_index":null,"comparison":"no better next move"}.
-JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step, over_obvious, x, y, z, relation, surface_like, falsify, now, goal, outcome.
+JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step, over_obvious, x, y, z, relation, surface_like, falsify, fact, fact_source, hypothesis, verification, now, goal, outcome.
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
@@ -1374,6 +1381,12 @@ export function parseExpertSelection(text, count = 5) {
     const z = asText(object.z, MAX_EXPERT_EXAMPLE)
     const relation = asText(object.relation, MAX_EXPERT_RELATION)
     const falsify = asText(object.falsify, MAX_EXPERT_FALSIFY)
+    // Attribution is not verification. Unsourced observations are not promoted
+    // to facts; legacy cards remain readable without manufacturing provenance.
+    const factSource = asText(object.fact_source, 240)
+    const fact = factSource ? asText(object.fact, 240) : ''
+    const hypothesis = asText(object.hypothesis, 320)
+    const verification = asText(object.verification, 320)
     // Y is the human line; on a four-beat card it doubles as why.
     const why = (typeof object.why === 'string' ? object.why.replace(/\s+/g, ' ').trim() : overObvious) || y
     if (why === '') continue
@@ -1408,6 +1421,10 @@ export function parseExpertSelection(text, count = 5) {
       z,
       relation,
       falsify,
+      fact,
+      fact_source: fact ? factSource : '',
+      hypothesis,
+      verification,
       surface_like: surfaceLike,
       relation_present: relationPresent,
       // `null` means "legacy candidate, not judged"; `false` drops the card.
@@ -1541,6 +1558,10 @@ export function selectBestMove(selection, minScore = 5) {
     z: chosen.z ?? '',
     relation: chosen.relation ?? '',
     falsify: chosen.falsify ?? '',
+    fact: chosen.fact ?? '',
+    fact_source: chosen.fact_source ?? '',
+    hypothesis: chosen.hypothesis ?? '',
+    verification: chosen.verification ?? '',
     relation_ok: chosen.relation_ok ?? null,
     now: chosen.now ?? '',
     goal: chosen.goal ?? '',

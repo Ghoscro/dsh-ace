@@ -11,12 +11,13 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.20'
+const ACE_VERSION = '0.5.21'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
 
 const zh = {
+  fact: '已有观察：', factSource: '出处（未独立核验）：', hypothesis: '推想（待验证）：', verification: '验证思路：', mechanism: '机制联想：',
   title: '深度预测', loading: '正在预测下一句…', refresh: '重新推演', close: '关闭深度预测',
   error: '深度预测失败', retry: '重试', inserted: '深度预测建议已填入',
   undo: '撤销', settings: '深度预测设置', auto: '自动生成深度预测', pause: '暂停深度预测',
@@ -32,6 +33,7 @@ const zh = {
   mode: '模式', mode_safe: '保守安全', mode_standard: '常规推理', mode_brainstorm: '脑暴思维', mode_wild: '王牌预测',
 }
 const en = {
+  fact: 'Observation: ', factSource: 'Source (not independently verified): ', hypothesis: 'Hypothesis (untested): ', verification: 'How to test: ', mechanism: 'Mechanism analogy: ',
   title: 'ACE Move', loading: 'ACE is predicting your next move…', refresh: 'Think again',
   close: 'Dismiss ACE', error: 'ACE failed',
   retry: 'Retry', inserted: 'ACE Move inserted', undo: 'Undo', settings: 'ACE settings',
@@ -436,6 +438,8 @@ function apply(ctx) {
             z: str('z'),
             relation: str('relation'),
             falsify: str('falsify'),
+            fact: str('fact'), fact_source: str('fact_source'),
+            hypothesis: str('hypothesis'), verification: str('verification'),
             now: str('now'),
             goal: str('goal'),
             outcome: str('outcome'),
@@ -1113,6 +1117,10 @@ function apply(ctx) {
       const z = field('z')
       const relation = field('relation')
       const falsify = field('falsify')
+      const fact = field('fact')
+      const factSource = field('fact_source')
+      const hypothesis = field('hypothesis')
+      const verification = field('verification')
       const now = field('now')
       const goal = field('goal')
       const outcome = field('outcome')
@@ -1140,12 +1148,19 @@ function apply(ctx) {
           React.createElement('span', { className: 'dcp-beat' }, t('goal')), goal) : null,
         outcome ? React.createElement('span', { className: 'dcp-plain' },
           React.createElement('span', { className: 'dcp-beat' }, t('outcome')), outcome) : null,
+        fact && factSource ? React.createElement('span', { className: 'dcp-fact' },
+          React.createElement('span', { className: 'dcp-beat' }, t('fact')), fact,
+          React.createElement('span', { className: 'dcp-meta' }, t('factSource') + factSource)) : null,
         line ? React.createElement('span', { className: 'dcp-why' },
-          y ? React.createElement('span', { className: 'dcp-beat' }, t('beatY')) : null, line) : null,
+          React.createElement('span', { className: 'dcp-beat' }, t(hypothesis ? 'mechanism' : 'hypothesis')), line) : null,
+        hypothesis ? React.createElement('span', { className: 'dcp-hypothesis' },
+          React.createElement('span', { className: 'dcp-beat' }, t('hypothesis')), hypothesis) : null,
         z ? React.createElement('span', { className: 'dcp-z' },
           React.createElement('span', { className: 'dcp-beat' }, t('beatZ')), z) : null,
         relation ? React.createElement('span', { className: 'dcp-rel' },
           React.createElement('span', { className: 'dcp-beat' }, t('relation')), relation) : null,
+        verification ? React.createElement('span', { className: 'dcp-verification' },
+          React.createElement('span', { className: 'dcp-beat' }, t('verification')), verification) : null,
         React.createElement('span', { className: 'dcp-text' }, text),
         meta ? React.createElement('span', { className: 'dcp-meta' }, meta) : null))
     })

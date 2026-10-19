@@ -70,7 +70,7 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
             value: {
               mode: 'expert',
               candidates: [
-                { text: '跑一遍测试', why: '先确认范围，避免重试掩盖问题', evidence: 'x.test.ts', risk: '', slot: 'recommended' },
+                { text: '跑一遍测试', why: '先确认范围，避免重试掩盖问题', evidence: 'x.test.ts', risk: '', slot: 'recommended', fact: '用户报告重试后通过', fact_source: '最后用户消息', hypothesis: '先确认范围：重试可能掩盖竞态', verification: '对照开启和关闭重试的同一用例', z: '像补货暂时掩盖库存损耗', falsify: '关闭重试仍稳定通过则削弱掩盖假设' },
                 { text: '先看 diff', why: '确认改动没有扩大', evidence: 'git diff', risk: '', slot: 'quick' },
                 { text: '别加重试', why: '重试会把竞态盖住', evidence: '', risk: '可能暴露更多失败', slot: 'non_obvious' },
                 { text: '顺手改 CI', why: '把同类问题一次收掉', evidence: 'ci.yml', risk: '', slot: 'risk' },
@@ -150,6 +150,11 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
   assert.equal(rows.length, 1)
   assert.match(container.textContent, /跑一遍测试/)
   assert.match(container.textContent, /先确认范围/)
+  assert.match(container.querySelector('.dcp-fact').textContent, /用户报告重试后通过.*最后用户消息/)
+  assert.match(container.querySelector('.dcp-hypothesis').textContent, /重试可能掩盖竞态/)
+  assert.match(container.querySelector('.dcp-verification').textContent, /对照开启和关闭/)
+  assert.match(container.textContent, /补货暂时掩盖库存损耗/)
+  assert.match(container.textContent, /关闭重试仍稳定通过则削弱/)
   assert.equal(fetchCalls.length, 1)
   assert.equal(fetchCalls[0].body.cwd, 'E:/project')
   assert.equal(fetchCalls[0].body.count, 4)
