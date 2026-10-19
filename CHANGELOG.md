@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed: the host half is a single file again. Adding a sibling module
+  (`ledger.js`) broke the pnpm-materialized copy, which hard-links existing files
+  but does not receive new ones, so the plugin failed to import and disappeared
+  from the composer after a restart.
 - Cards must carry an architectural or domain insight (`insight` 0-10, scored
   separately): boundary erosion, concepts that should split, known failure
   modes, cost curves. Mechanical steps score at most 3 unless they expose a

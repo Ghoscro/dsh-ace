@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { mergeLedger, digestRows, ingestLedger, sessionFile } from '../ledger.js'
+import { mergeLedger, digestRows, ingestLedger, sessionFile } from '../index.js'
 
 const conv = texts => texts.map((text, index) => ({ role: index % 2 === 0 ? 'user' : 'assistant', text }))
 const rows = list => conv(list)
