@@ -38,10 +38,14 @@ jobs:
           node-version: 22
       - run: npm install --include=dev --ignore-scripts
       - name: Pack the tagged commit
-        run: npm pack --pack-destination "$RUNNER_TEMP/fresh"
+        run: |
+          mkdir -p "$RUNNER_TEMP/fresh"
+          npm pack --pack-destination "$RUNNER_TEMP/fresh"
       - name: Download the published asset
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download "$GITHUB_REF_NAME" --pattern '*.tgz' --dir "$RUNNER_TEMP/published"
+        run: |
+          mkdir -p "$RUNNER_TEMP/published"
+          gh release download "$GITHUB_REF_NAME" --pattern '*.tgz' --dir "$RUNNER_TEMP/published"
       - name: Compare the release with this commit
         run: node scripts/compare-release.mjs "$RUNNER_TEMP/fresh" "$RUNNER_TEMP/published"

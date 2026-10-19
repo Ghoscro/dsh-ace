@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2 — 2026-10-19
+
+- Fix the self-check job: `npm pack --pack-destination` needs the directory to
+  exist, so both staging directories are created first. 0.3.1's release job
+  failed on exactly that step; its tarball was still published.
+
 ## 0.3.1 — 2026-10-19
 
 - The release workflow now verifies itself: after publishing, it downloads the
