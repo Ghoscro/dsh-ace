@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.2 — 2026-10-19
+
+- The card is written from inside the user's position: a ROLE block says the
+  model is the user, not an advisor looking at the user. It first answers "what
+  am I actually trying to fix", never says "you could / I suggest", and prefers
+  the user's own situation over best practice.
+- `tools/voice-likeness.ts` scores how close a text sits to the user's real
+  messages (character 3-gram bits/char against a holdout drawn from the DSH
+  session logs). It is a distribution view, not a gate: proper nouns still skew
+  it, and ACE cards are not persisted yet, so there is no second model.
+
 ## 0.5.1 — 2026-10-19
 
 - The card is written as the user, not as an assistant describing the user:

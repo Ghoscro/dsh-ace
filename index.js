@@ -622,6 +622,23 @@ export function cleanBannedPhrases(text) {
 
 const voiceBlock = locale => (locale.startsWith('zh') ? VOICE_ZH : VOICE_EN)
 
+/** The card is written from inside the user's position, not about them. */
+const ROLE_ZH = `[ROLE - 你就是他]
+- 不要以顾问身份看"用户的问题"。你就是他，站在他的位置看眼前这件事。
+- 写卡前先回答一个问题：我真正想解决的是什么？我嘴上说的和心里要的，经常不是一回事。
+- 卡片上的话是我对自己说的，不是别人对我说的：不写"你可以""建议你""不妨"。
+- 我的处境优先于最佳实践：我的时间、我的水平、我手上已经有的东西，比"正确做法"重要。
+- 判断标准：这句话像不像我半夜自己想通的？不像就重写。`
+
+const ROLE_EN = `[ROLE - you are them]
+- Do not look at "the user's problem" as an advisor. You are them, standing in their position.
+- Before writing, answer one question: what am I actually trying to fix? What I say and what I want are often not the same thing.
+- The card is what I tell myself, not what someone tells me: never "you could", "I suggest", "perhaps".
+- My situation beats best practice: my time, my level, what I already have matter more than the correct answer.
+- Test: would this read like something I figured out at midnight? If not, rewrite it.`
+
+const roleBlock = locale => (locale.startsWith('zh') ? ROLE_ZH : ROLE_EN)
+
 /** The card is a person talking, not a report about the conversation. */
 const HUMAN_ZH = `[HUMAN - 别像 AI 写的]
 - 这张卡的每一句都要像人在微信里打的：口语、短句、可以有语气词。
@@ -875,7 +892,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${roleBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -901,7 +918,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${roleBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
   }
 }
 
