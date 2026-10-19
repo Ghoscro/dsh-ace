@@ -11,7 +11,7 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.16'
+const ACE_VERSION = '0.5.17'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -593,7 +593,17 @@ function apply(ctx) {
     // tail and paint it after the caret. Tab accepts, any further typing drops it.
     useEffect(() => {
       if (typeof document === 'undefined') return undefined
-      const textareaOf = () => document.querySelector('[data-composer-card] textarea')
+      // The card attribute is the preferred anchor, but the shipped web build
+      // may not carry it: fall back to the largest editable textarea on screen.
+      const textareaOf = () => {
+        const scoped = document.querySelector('[data-composer-card] textarea')
+        if (scoped) return scoped
+        const all = Array.from(document.querySelectorAll('textarea'))
+        const usable = all.filter(element => element.offsetParent !== null && !element.disabled && !element.readOnly)
+        const pool = usable.length > 0 ? usable : all
+        pool.sort((left, right) => right.clientWidth * right.clientHeight - left.clientWidth * left.clientHeight)
+        return pool[0] ?? null
+      }
       let layer = null
       let completion = ''
       let expanded = false
@@ -629,14 +639,13 @@ function apply(ctx) {
             line.textContent = `${clock(round.at)} 启动 ${ACE_VERSION}`
             return line
           }
-          const target = round.input ? '' : ' [无输入框]'
-          line.textContent = `${clock(round.at)} 键${round.key ? '✓' : '空'} 展开${round.expanded ? '✓' : '空'} 本地${round.local ? '✓' : '空'} 模型${round.model ? '✓' : '空'}${target}`
+          line.textContent = `${clock(round.at)} 键${round.key ? '✓' : '空'} 展开${round.expanded ? '✓' : '空'} 本地${round.local ? '✓' : '空'} 模型${round.model ? '✓' : '空'}${round.note ?? ''}`
           return line
         }))
       }
 
-      const pushRound = input => {
-        rounds.push({ at: new Date(), key: true, expanded, local: chain.local, model: chain.model, input })
+      const pushRound = note => {
+        rounds.push({ at: new Date(), key: true, expanded, local: chain.local, model: chain.model, note })
         if (rounds.length > 8) rounds.shift()
         renderTrace()
       }
@@ -854,7 +863,10 @@ function apply(ctx) {
           event.preventDefault()
           event.stopPropagation()
           chain.key = true
-          pushRound(Boolean(element))
+          const found = Boolean(element)
+          const total = document.querySelectorAll('textarea').length
+          const scoped = document.querySelectorAll('[data-composer-card]').length
+          pushRound(found ? '' : ` [无输入框 textarea=${total} card=${scoped}]`)
           if (element) {
             expanded = !expanded
             chain.expanded = expanded

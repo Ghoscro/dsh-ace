@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.17 — 2026-10-19
+
+- Fix: the key handler never found the textarea because the shipped web build
+  does not expose `[data-composer-card]` (the trace showed
+  `[无输入框]` on every press). The lookup now falls back to the largest visible
+  editable textarea, and the trace prints `textarea=N card=M` when neither path
+  finds one.
+
 ## 0.5.16 — 2026-10-19
 
 - The trace is anchored at the bottom-left and opens with a boot line carrying
