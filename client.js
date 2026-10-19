@@ -20,7 +20,7 @@ const zh = {
   card: '深度预测', ace: '深度预测',
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
   salvaged: '模型没按结构化格式返回，已把原文放进卡片',
-  beatX: '你刚说：', beatY: '背后：', beatZ: '还会：', falsify: '错了会这样', transfer: '举一反三',
+  beatX: '你刚说：', beatY: '背后：', beatZ: '还会：', relation: '怎么对上：', falsify: '错了会这样',
   mode: '模式', mode_safe: '保守安全', mode_standard: '常规推理', mode_brainstorm: '脑暴思维', mode_wild: '王牌预测',
 }
 const en = {
@@ -35,7 +35,7 @@ const en = {
   card: 'ACE Move', ace: 'ACE',
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
   salvaged: 'The model did not return structured JSON; its raw answer is in the card',
-  beatX: 'You said: ', beatY: 'Behind it: ', beatZ: 'Also: ', falsify: 'Wrong if', transfer: 'Transfer',
+  beatX: 'You said: ', beatY: 'Behind it: ', beatZ: 'Also: ', relation: 'How it maps: ', falsify: 'Wrong if',
   mode: 'Mode', mode_safe: 'Safe', mode_standard: 'Standard', mode_brainstorm: 'Brainstorm', mode_wild: 'ACE',
 }
 
@@ -283,7 +283,6 @@ function apply(ctx) {
             z: str('z'),
             relation: str('relation'),
             falsify: str('falsify'),
-            transfer: typeof item.transfer === 'number' ? item.transfer : null,
           }
         }).filter(Boolean).slice(0, count)
         if (candidates.length === 0) {
@@ -346,6 +345,7 @@ function apply(ctx) {
     '.dcp-why{font-size:11px;line-height:1.35;opacity:.62;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-x{font-size:10.5px;line-height:1.3;opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.dcp-z{font-size:10.5px;line-height:1.35;opacity:.6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-rel{font-size:10.5px;line-height:1.35;opacity:.68;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-beat{font-weight:600;opacity:.8;margin-right:2px}',
     '.dcp-meta{font-size:10px;line-height:1.3;opacity:.48;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.dcp-warning{font-size:11px;line-height:1.35;color:#b8860b;margin:2px 6px 0}',
@@ -581,8 +581,9 @@ function apply(ctx) {
         line ? React.createElement('span', { className: 'dcp-why' },
           y ? React.createElement('span', { className: 'dcp-beat' }, t('beatY')) : null, line) : null,
         z ? React.createElement('span', { className: 'dcp-z' },
-          React.createElement('span', { className: 'dcp-beat' }, t('beatZ')), z,
-          relation ? `（${relation}）` : '') : null,
+          React.createElement('span', { className: 'dcp-beat' }, t('beatZ')), z) : null,
+        relation ? React.createElement('span', { className: 'dcp-rel' },
+          React.createElement('span', { className: 'dcp-beat' }, t('relation')), relation) : null,
         React.createElement('span', { className: 'dcp-text' }, text),
         meta ? React.createElement('span', { className: 'dcp-meta' }, meta) : null))
     })

@@ -8,7 +8,7 @@ import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
-  captureSample, countAnchors, estimateLevel, findBannedPhrase, readProjectShape, repliesTo, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
+  captureSample, countAnchors, estimateLevel, findBannedPhrase, judgeRelation, readProjectShape, repliesTo, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
   ACE_MODES,
 } from '../index.js'
 
@@ -941,62 +941,65 @@ test('the insight block reaches both prompts', () => {
   const en = buildExpertPrompt({ ...base, locale: 'en-US', mode: 'standard' }).user
   assert.match(zh, /\[INSIGHT - 用户自己想不到的那一层\]/)
   assert.match(zh, /四拍/)
-  assert.match(zh, /transfer（0-10）：关系像（同一条因果线）是必须的/)
+  assert.match(zh, /没有 relation、或 relation 只是把 x\/z 重写一遍/)
   assert.match(en, /\[INSIGHT - the layer the user would not have produced\]/)
   assert.match(en, /four beats/)
   assert.match(en, /surface_like/)
 })
 
-test('transfer is parsed and a surface-unlike example without relation scores zero', () => {
+test('the host judges the relation itself, not the model', () => {
   const base = {
     why: '测试里的重试会掩盖偶发失败', evidence: '', risk: '', action: 'advance',
     value: 7, novelty: 6, worth_extra_step: 7, insight: 6,
     text: '把重试去掉，只跑一次 x.test.ts',
   }
+  // Surface-alike: the example is already visible, no mapping line required.
   const surface = parseExpertSelection(JSON.stringify({
     ...base, x: '重试过了吗', y: '重试会掩盖偶发失败', z: '上次那个上传重试也是',
-    relation: '', surface_like: true, falsify: '去掉重试后一次就过', transfer: 9,
+    relation: '', surface_like: true, falsify: '去掉重试后一次就过',
   }), 5).moves[0]
-  assert.equal(surface.transfer, 9)
-  assert.equal(surface.transfer_ok, true)
+  assert.equal(surface.relation_ok, true)
 
+  // Surface-unlike with no mapping line: dropped by the host.
   const missing = parseExpertSelection(JSON.stringify({
     ...base, x: '重试过了吗', y: '重试会掩盖偶发失败', z: '肿瘤放疗的分次照射',
-    relation: '', surface_like: false, falsify: '', transfer: 9,
+    relation: '', surface_like: false, falsify: '',
   }), 5).moves[0]
-  assert.equal(missing.transfer, 0)
-  assert.equal(missing.transfer_ok, false)
+  assert.equal(missing.relation_ok, false)
 
+  // A rewrite of Z is not a mapping.
+  const rewritten = parseExpertSelection(JSON.stringify({
+    ...base, x: '重试过了吗', y: '重试会掩盖偶发失败', z: '上次那个上传重试也是',
+    relation: '上次那个上传重试也是', surface_like: false, falsify: '',
+  }), 5).moves[0]
+  assert.equal(rewritten.relation_ok, false)
+
+  // A sentence naming the shared mechanism passes.
   const mapped = parseExpertSelection(JSON.stringify({
     ...base, x: '重试过了吗', y: '重试会掩盖偶发失败', z: '肿瘤放疗的分次照射',
-    relation: '都是把一个整体失败拆成多次小机会', surface_like: false, falsify: '', transfer: 8,
+    relation: '都是把一个整体失败拆成多次小机会', surface_like: false, falsify: '',
   }), 5).moves[0]
-  assert.equal(mapped.transfer, 8)
-  assert.equal(mapped.transfer_ok, true)
+  assert.equal(mapped.relation_ok, true)
 })
 
-test('a card whose transfer beat fails is never shown', () => {
+test('judgeRelation is strict about what counts as a mapping', () => {
+  assert.equal(judgeRelation({ x: '重试过了吗', z: '肿瘤放疗分次', relation: '都是把整体失败拆成多次小机会', surfaceLike: false }), true)
+  assert.equal(judgeRelation({ x: '重试过了吗', z: '肿瘤放疗分次', relation: '肿瘤放疗分次', surfaceLike: false }), false)
+  assert.equal(judgeRelation({ x: '重试过了吗', z: '肿瘤放疗分次', relation: '', surfaceLike: false }), false)
+  assert.equal(judgeRelation({ x: '重试过了吗', z: '肿瘤放疗分次', relation: '同一件事', surfaceLike: false }), false)
+  assert.equal(judgeRelation({ x: '重试过了吗', z: '肿瘤放疗分次', relation: '', surfaceLike: true }), true)
+  assert.equal(judgeRelation({ x: '重试过了吗', z: '', relation: '都是同一件事', surfaceLike: false }), false)
+})
+
+test('a four-beat card without a written mapping never reaches the composer', () => {
   const selection = parseExpertSelection(JSON.stringify({
     text: '把重试去掉再跑一次 x.test.ts', why: '重试掩盖竞态', action: 'advance',
     value: 9, novelty: 9, worth_extra_step: 9, insight: 9,
     x: '重试过了吗', y: '重试掩盖偶发失败', z: '肿瘤放疗分次',
-    surface_like: false, relation: '', transfer: 9,
+    surface_like: false, relation: '',
   }), 5)
   assert.equal(selection.moves.length, 1)
   assert.equal(selectBestMove(selection, 5), null)
-})
-
-test('transfer outranks a mechanical step at similar value', () => {
-  const base = {
-    action: 'advance', value: 7, novelty: 5, worth_extra_step: 7,
-    evidence: '', over_obvious: '', text: '跑 pytest',
-  }
-  const mechanical = { ...base, insight: 2, transfer_present: true, transfer: 2, transfer_ok: true }
-  const transferable = {
-    ...base, text: '把重试去掉只跑一次', insight: 4,
-    transfer_present: true, transfer: 9, transfer_ok: true,
-  }
-  assert.ok(scoreMove(transferable) > scoreMove(mechanical) + 2)
 })
 
 test('the prompt asks for the four beats and the falsifier', () => {

@@ -38,12 +38,12 @@ Most next-message tools optimize for **what you would probably type**. ACE optim
 
 - **X** restates the concrete thing in your own words (usually the assistant line you are answering).
 - **Y** states the relation in one human sentence: why it works or fails. At most one abstraction.
-- **Z** gives one other place the same relation shows up. If it does not look alike on the surface, the card must say how the relation maps; if it cannot, this beat scores zero.
+- **Z** gives one other place the same relation shows up. If it does not look alike on the surface, the card carries a separate line saying how it maps; if it cannot, this beat scores zero.
 - **W** is a checkable action for today: engineers get a file or command, everyone else gets something they can see ("refresh and look whether the badge is still red").
 - **Wrong if:** what result would prove the card wrong.
 
 - It generates 3–5 directions internally: advance, use an existing tool, reframe, verify, clarify, constrain, close.
-- It scores them for `value`, `novelty`, `worth_extra_step`, `transfer` (does the relation hold), and action type. A candidate that fails the transfer beat is not shown at all.
+- It scores them for `value`, `novelty`, `worth_extra_step`, and action type. The relation beat is judged by the host, not scored by the model: a surface-alike example needs no mapping line, and a surface-unlike example with no written mapping is not shown at all.
 - **Level:** the card reads the user's own messages and adapts — everyday language and one action at a time for non-engineers, shorthand and judgement for engineers. Override it with `level` in the plugin config.
 - The default mode answers a specific line of the assistant's last message (`reply_to`, quoted verbatim), but picks the answer worth sending, not the smoothest one.
 - It shows **one** card, with X/Y/Z/W and its falsifier.

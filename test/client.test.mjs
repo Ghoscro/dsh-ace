@@ -152,7 +152,9 @@ test('apply registers both composer slots and the locale dictionary', () => {
   assert.equal(dictionaries[0].dictionary.zh.mode_brainstorm, '脑暴思维')
   assert.equal(dictionaries[0].dictionary.zh.beatX, '你刚说：')
   assert.equal(dictionaries[0].dictionary.zh.beatZ, '还会：')
+  assert.equal(dictionaries[0].dictionary.zh.relation, '怎么对上：')
   assert.equal(dictionaries[0].dictionary.en.beatZ, 'Also: ')
+  assert.equal(dictionaries[0].dictionary.en.relation, 'How it maps: ')
   assert.equal(dictionaries[0].dictionary.zh.falsify, '错了会这样')
   effects.forEach(dispose => { if (typeof dispose === 'function') dispose() })
 })
@@ -178,6 +180,7 @@ test('the card styles cover the four beats', () => {
   const css = appended.map(element => element.textContent).join('')
   assert.match(css, /\.dcp-x\{/)
   assert.match(css, /\.dcp-z\{/)
+  assert.match(css, /\.dcp-rel\{/)
   assert.match(css, /\.dcp-beat\{/)
 })
 
