@@ -11,7 +11,7 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.10'
+const ACE_VERSION = '0.5.11'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -644,7 +644,7 @@ function apply(ctx) {
           layer.style.letterSpacing = ''
           const hint = document.createElement('span')
           hint.className = 'dcp-ghost-hint'
-          hint.textContent = 'Alt'
+          hint.textContent = '`'
           layer.replaceChildren(hint)
           layer.style.display = 'block'
           return
@@ -768,8 +768,13 @@ function apply(ctx) {
 
       const onKeyDown = event => {
         const element = textareaOf()
-        if (event.key === 'Alt' && element && document.activeElement === element
-          && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        // Backquote (left pinky) toggles the ghost; Ctrl/Cmd+Backquote is the
+        // fallback for IMEs that swallow the bare key. Alt is deliberately not
+        // used: on Windows it opens the menu bar and clashes with Alt+Tab.
+        const backquote = event.code === 'Backquote' || event.key === '`'
+        const toggle = backquote && (event.ctrlKey || event.metaKey
+          || (!event.shiftKey && !event.altKey))
+        if (toggle && element && document.activeElement === element) {
           event.preventDefault()
           expanded = !expanded
           if (completion) paint(element.value)

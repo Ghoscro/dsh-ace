@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.11 — 2026-10-19
+
+- The ghost toggle moved from Alt to the backquote key (`` ` ``), right under the
+  left pinky; Ctrl/Cmd+Backquote is the fallback for IMEs that swallow the bare
+  key. Alt is no longer bound: on Windows it opens the menu bar and fights
+  Alt+Tab.
+
 ## 0.5.10 — 2026-10-19
 
 - The ghost is collapsed by default: only a 9px white `Alt` hint sits in the
