@@ -21,7 +21,7 @@ npm 上 `dsh-ace` 已被无关项目占用，包名是 `@ghoscro/dsh-ace`。在�
 
 ```bash
 # 在 DSH profile 目录里
-pnpm add file:/绝对路径/ghoscro-dsh-ace-0.5.0.tgz
+pnpm add file:/绝对路径/ghoscro-dsh-ace-0.5.1.tgz
 ```
 
 然后把 `"@ghoscro/dsh-ace"` 加进 `dsh.profile.bundles`，在 profile 里 materialize（DSH 插件页或 `pnpm install`），重启 DSH。composer 工具行会出现 **✦ 深度预测**。
