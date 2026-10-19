@@ -216,6 +216,15 @@ test('the type scale is written to the document root at runtime', () => {
   assert.equal(rootStyle.values['--dsh-fs-x'], '12px')
 })
 
+test('the dock width follows the composer card and never exceeds its seat', () => {
+  const { exports } = loadClient()
+  const dockWidth = exports.__test.dockWidth
+  assert.equal(dockWidth(780, 1400), 780)
+  assert.equal(dockWidth(780, 400), 400)
+  assert.equal(dockWidth(0, 400), 0)
+  assert.equal(dockWidth(Number.NaN, 400), 0)
+})
+
 test('the type scale clamps and stays proportional', () => {
   const { exports } = loadClient()
   const normalize = value => JSON.parse(JSON.stringify(exports.__test.normalizeFont(value)))

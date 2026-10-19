@@ -228,6 +228,32 @@ function applyFont(value) {
   root.setProperty('--dsh-fs-x', `${value.x}px`)
 }
 
+/* The card sits in the composer dock but not in the same slot as Todo/Goal, so
+   its width is measured from the live composer card instead of copied CSS math.
+   The observer keeps `--dsh-ace-width` on the document root in sync. */
+const COMPOSER_SELECTOR = '[data-composer-card]'
+function dockWidth(rectWidth, available) {
+  const width = Number(rectWidth)
+  if (!Number.isFinite(width) || width <= 0) return 0
+  const host = Number(available)
+  return host > 0 ? Math.min(width, host) : width
+}
+function applyComposerWidth() {
+  const root = document?.documentElement?.style
+  if (!root || typeof document?.querySelector !== 'function') return
+  const card = document.querySelector(COMPOSER_SELECTOR)
+  if (!card || typeof card.getBoundingClientRect !== 'function') return
+  const rect = card.getBoundingClientRect()
+  if (!rect.width) return
+  // Never exceed the seat that holds both the input card and this dock.
+  const host = typeof card.closest === 'function' ? card.closest('[data-composer-seat]') : null
+  const available = host && typeof host.getBoundingClientRect === 'function'
+    ? host.getBoundingClientRect().width
+    : rect.width
+  const width = dockWidth(rect.width, available)
+  if (width > 0) root.setProperty('--dsh-ace-width', `${Math.round(width)}px`)
+}
+
 function apply(ctx) {
   const stores = new Map()
   const faces = new Map()
@@ -448,7 +474,7 @@ function apply(ctx) {
 
   const style = document.createElement('style')
   style.textContent = [
-    '.dcp-dock{box-sizing:border-box;flex:none;width:calc(100% - 2 * var(--dsh-composer-side-clearance,16px) - 4 * var(--dsh-composer-dock-inset,8px));max-width:calc(var(--dsh-composer-card-max-width,780px) - 4 * var(--dsh-composer-dock-inset,8px));margin:0 auto;padding:10px 12px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.24));border-radius:12px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#0f1115);box-shadow:0 2px 10px rgba(0,0,0,.06);font:inherit;font-size:var(--dsh-fs-w,15px);line-height:1.5}',
+    '.dcp-dock{box-sizing:border-box;flex:none;width:var(--dsh-ace-width,100%);margin:0 auto;padding:10px 12px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.24));border-radius:12px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#0f1115);box-shadow:0 2px 10px rgba(0,0,0,.06);font:inherit;font-size:var(--dsh-fs-w,15px);line-height:1.5}',
     '.dcp-head{display:flex;align-items:center;gap:8px;min-height:26px;margin-bottom:4px}',
     '.dcp-title{font-size:var(--dsh-fs-x,12px);letter-spacing:.02em;opacity:.68;white-space:nowrap}',
     '.dcp-loading{font-size:var(--dsh-fs-meta,13px);opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
@@ -510,6 +536,44 @@ function apply(ctx) {
     const input = useInput(snapshot => snapshot)
     const session = useSession(snapshot => snapshot)
     const [settingsOpen, setSettingsOpen] = useState(false)
+
+    // Keep --dsh-ace-width equal to the live composer card. The dock slot is not
+    // the Todo/Goal slot, so no CSS math is assumed: measure, then set.
+    useEffect(() => {
+      if (typeof document === 'undefined') return undefined
+      let card = null
+      let resize = null
+      let frame = 0
+      const bind = () => {
+        const next = document.querySelector(COMPOSER_SELECTOR)
+        if (next && next !== card) {
+          card = next
+          if (resize) resize.disconnect()
+          if (typeof ResizeObserver !== 'undefined') {
+            resize = new ResizeObserver(() => applyComposerWidth())
+            resize.observe(card)
+          }
+        }
+        applyComposerWidth()
+      }
+      bind()
+      const schedule = () => {
+        if (frame) return
+        frame = window.requestAnimationFrame(() => {
+          frame = 0
+          bind()
+        })
+      }
+      const mutation = typeof MutationObserver !== 'undefined' && document.body
+        ? new MutationObserver(schedule)
+        : null
+      if (mutation) mutation.observe(document.body, { childList: true, subtree: true })
+      return () => {
+        if (frame) window.cancelAnimationFrame(frame)
+        if (resize) resize.disconnect()
+        if (mutation) mutation.disconnect()
+      }
+    }, [])
 
     const stateRef = useRef(state)
     stateRef.current = state
@@ -886,6 +950,6 @@ function apply(ctx) {
 return {
   inject: ['slots', 'locale', 'sessions'],
   apply,
-  __test: { extractTranscript, pickTurnEnd, pickTailEvent, readSettings, clampCount, normalizeFont, applyFont },
+  __test: { extractTranscript, pickTurnEnd, pickTailEvent, readSettings, clampCount, normalizeFont, applyFont, dockWidth },
 }
 }})
