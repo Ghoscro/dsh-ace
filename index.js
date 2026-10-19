@@ -29,6 +29,7 @@ const MAX_EXPERT_TEXT = 600
 const MAX_EXPERT_WHY = 160
 const MAX_EXPERT_EVIDENCE = 240
 const MAX_EXPERT_RISK = 160
+const MAX_EXPERT_REPLY = 80
 const VERSION = '0.1.0'
 
 const ZH_SYSTEM = `你是"下一句预测器"。根据对话、用户近况与任务上下文，预测用户下一条会亲自发出的消息，给出 {{N}} 条候选。
@@ -112,7 +113,7 @@ const ZH_EXPERT = `你是用户的专家级 next-move 顾问。不要猜最可�
 
 输出格式：每行一个 JSON 对象，不要数组、不要逗号分隔、不要 markdown、不要代码围栏。
 前 3-5 行是候选，每行：
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"over_obvious":"..."}
+{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"..."}
 最后一行是选择：
 {"best_index":0,"comparison":"为什么选它，其他方向差在哪"}
 
@@ -131,7 +132,7 @@ Directions include: advance the next step, use an existing tool or a cheaper pat
 
 Output format: one JSON object per line. No array, no comma-separated list, no markdown, no code fences.
 The first 3-5 lines are candidates:
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"over_obvious":"..."}
+{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"..."}
 The final line is the selection:
 {"best_index":0,"comparison":"why this one, and why the others are weaker"}
 
@@ -530,7 +531,7 @@ export const MODE_MAX_TOKENS = { safe: 2200, standard: 4000, brainstorm: 5600, w
 
 const MODE_POLICY = {
   safe: 'MODE safe: reversible, small, cheap-to-undo steps. Say how each move rolls back. Prefer the smallest step that still tests the real question; do not demand a rewrite or a new dependency when a reversible step exists.',
-  standard: 'MODE standard: the next concrete technical step a competent engineer would take. Name the file, command or check that changes state, say what result would count as success, and skip hedging.',
+  standard: 'MODE standard: infer the exact line this user wants to send next, given the assistant\'s last message. It answers what the assistant just asked or offered, carries the user\'s real intent (including the part they have not said yet), and sounds like them. Concrete and technical, but first of all it is the line they would actually type.',
   brainstorm: 'MODE brainstorm: open the space. Candidates must differ in kind, not wording: different mechanism, different field, different ambition. Two candidates may never be the same idea rephrased.',
   wild: 'MODE wild: break the boundary the user imagined. Recombine mechanisms from unrelated fields, follow second- and third-order consequences, challenge the premise when the evidence allows, and write the move with enough concrete detail that another AI could start from it. Use the room you have; do not compress in order to stay brief.',
 }
@@ -606,6 +607,21 @@ export function cleanBannedPhrases(text) {
 }
 
 const voiceBlock = locale => (locale.startsWith('zh') ? VOICE_ZH : VOICE_EN)
+
+/** A card wins when it is the line the user was about to type anyway. */
+const REPLY_ZH = `[REPLY - 读心，不是给建议]
+- 先看助手最后一句在问什么、承诺什么、交出了什么；这张卡必须是对它的直接回应，而不是另起一个话题。
+- reply_to 抄助手最后一句里被你回应的那一小段原文（6-40 字，逐字，不要改写）。抄不出来，说明这张卡不是在回应他。
+- 用户读到卡的感觉应该是"我草，我就是要说这个"：是他此刻真实想说的话，不是更聪明的顾问替他想的话。
+- 只写他真会打出来的那一句；不要解释、不要列方案、不要替他把话说完。`
+
+const REPLY_EN = `[REPLY - read the mind, not give advice]
+- Read the assistant's last message: what is it asking, offering, or handing over? The card must answer that, not start a new topic.
+- reply_to quotes the exact fragment of the assistant's last message being answered (6-40 characters, verbatim, no paraphrase). If you cannot quote it, the card is not a reply.
+- The user should read it and think "that is exactly what I wanted to say": their real next line, not a smarter advisor's line.
+- Write only the line they would type. No explanations, no option lists, no finishing their thought for them.`
+
+const replyBlock = locale => (locale.startsWith('zh') ? REPLY_ZH : REPLY_EN)
 
 /** The card should carry an insight the user would not have produced alone. */
 const INSIGHT_ZH = `[INSIGHT - 用户自己想不到的那一层]
@@ -735,7 +751,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -761,7 +777,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
   }
 }
 
@@ -868,6 +884,7 @@ export function parseExpertSelection(text, count = 5) {
       novelty: normalizeScore(object.novelty),
       worth_extra_step: normalizeScore(object.worth_extra_step ?? object.worth),
       insight: normalizeScore(object.insight),
+      reply_to: typeof object.reply_to === 'string' ? clip(object.reply_to.replace(/\s+/g, ' ').trim(), MAX_EXPERT_REPLY) : '',
       slot: typeof object.slot === 'string' ? object.slot : '',
     })
   }
@@ -914,6 +931,19 @@ export function countAnchors(text) {
   return Math.min(3, found.size)
 }
 
+/**
+ * Does the quoted fragment actually appear in the assistant's last message?
+ * @param {string} quote - candidate reply_to.
+ * @param {string} assistant - assistant's last message.
+ * @returns {boolean|null} true/false when a quote exists, null when omitted.
+ */
+export function repliesTo(quote, assistant) {
+  const normalize = value => String(value ?? '').replace(/\s+/g, '').replace(/[“”"'`。，、；：！？.,;:!?()（）]/g, '').toLowerCase()
+  const q = normalize(quote)
+  if (q.length < 4) return null
+  return normalize(assistant).includes(q)
+}
+
 export function scoreMove(move) {
   const actionBonus = {
     advance: 1.2,
@@ -934,6 +964,8 @@ export function scoreMove(move) {
     + (move.over_obvious ? 0.2 : 0)
     + Math.min(1.2, countAnchors(move.text) * 0.4)
     + (move.insight ?? 5) * 0.2
+    + (move.reply_ok === true ? 0.8 : 0)
+    - (move.reply_ok === false ? 0.5 : 0)
 }
 
 /**
@@ -1620,6 +1652,8 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
       }
     }
   }
+  const lastAssistantText = [...input.transcript].reverse().find(row => row.role === 'assistant')?.text ?? ''
+  for (const move of selection.moves) move.reply_ok = repliesTo(move.reply_to, lastAssistantText)
   const best = selectBestMove(selection, config.expertMinScore)
   if (best && findBannedPhrase(best.text)) {
     let rewritten = ''

@@ -8,7 +8,7 @@ import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
-  captureSample, countAnchors, findBannedPhrase, readProjectShape, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
+  captureSample, countAnchors, findBannedPhrase, readProjectShape, repliesTo, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
   ACE_MODES,
 } from '../index.js'
 
@@ -941,4 +941,52 @@ test('the insight block reaches both prompts', () => {
   assert.match(zh, /模块边界正在被穿过|结构性事实/)
   assert.match(en, /\[INSIGHT - the layer the user would not have produced\]/)
   assert.match(en, /structural fact/)
+})
+
+test('a quoted reply must actually appear in the assistant message', () => {
+  const assistant = '改好了。要跑全量吗？要不要先看 diff。'
+  assert.equal(repliesTo('要跑全量吗', assistant), true)
+  assert.equal(repliesTo('“要跑全量吗？”', assistant), true)
+  assert.equal(repliesTo('要不要先看 diff', assistant), true)
+  assert.equal(repliesTo('先部署到线上', assistant), false)
+  assert.equal(repliesTo('', assistant), null)
+  assert.equal(repliesTo('短', assistant), null)
+})
+
+test('answering the assistant beats an unrelated move at equal strength', () => {
+  const base = { action: 'advance', value: 7, novelty: 5, worth_extra_step: 7, insight: 7, evidence: '', over_obvious: '' }
+  const replies = { ...base, text: '先跑单个用例看竞态还在不在', reply_ok: true }
+  const unrelated = { ...base, text: '把 session 拆开', reply_ok: false }
+  assert.ok(scoreMove(replies) > scoreMove(unrelated) + 1)
+})
+
+test('generation prefers the candidate that quotes the assistant, end to end', async () => {
+  const moves = [
+    { text: '先只跑那个用例，确认竞态还在不在', why: '缩小范围先验证机制', evidence: 'x.test.ts', risk: '',
+      action: 'advance', value: 7, novelty: 5, worth_extra_step: 7, insight: 7, reply_to: '要跑全量吗' },
+    { text: '把 session 和 event 拆成两个模块', why: '边界不清', evidence: 'src/session.js', risk: '',
+      action: 'advance', value: 7, novelty: 5, worth_extra_step: 7, insight: 7, reply_to: '先部署到线上' },
+  ].map(JSON.stringify).join('\n') + '\n' + JSON.stringify({ best_index: 1, comparison: '' })
+  const ctx = { get: () => undefined, llm: llmSequence([moves]) }
+  const result = await generateExpertPrediction(ctx, normalizeConfig(), {
+    transcript: [
+      { role: 'user', text: '修一下测试' },
+      { role: 'assistant', text: '改好了。要跑全量吗？' },
+    ],
+    count: 4, cwd: '', locale: 'zh-CN', style: 'standard',
+  }, new AbortController().signal)
+  assert.equal(result.candidates.length, 1)
+  assert.match(result.candidates[0].text, /跑那个用例/)
+})
+
+test('the reply block and the predictive standard policy are in the prompt', () => {
+  const prompt = buildExpertPrompt({
+    transcript: [{ role: 'user', text: '修测试' }, { role: 'assistant', text: '要跑全量吗？' }],
+    count: 4, locale: 'zh-CN', mode: 'standard',
+  }).user
+  assert.match(prompt, /\[REPLY - 读心，不是给建议\]/)
+  assert.match(prompt, /reply_to 抄助手最后一句/)
+  assert.match(prompt, /我草，我就是要说这个/)
+  assert.match(prompt, /MODE standard: infer the exact line this user wants to send next/)
+  assert.match(buildExpertPrompt({ transcript: [], count: 4, locale: 'en-US', mode: 'standard' }).user, /\[REPLY - read the mind/)
 })

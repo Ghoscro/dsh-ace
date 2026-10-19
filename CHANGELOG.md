@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The default (`standard`) mode now predicts the line the user actually wanted to
+  send: every candidate carries `reply_to`, a verbatim fragment of the
+  assistant's last message, and the scorer rewards a quote that really appears
+  there. Text, voice rules and insight scoring are unchanged.
+
 ## 0.3.2 — 2026-10-19
 
 - Fix the self-check job: `npm pack --pack-destination` needs the directory to

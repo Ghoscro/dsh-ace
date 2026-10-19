@@ -34,6 +34,7 @@ Most next-message tools optimize for **what you would probably type**. ACE optim
 
 - It generates 3–5 different directions internally: advance, use an existing tool, reframe, verify, clarify, constrain, close.
 - It scores them for `value`, `novelty`, `worth_extra_step`, and action type.
+- The default mode predicts **the line you were about to type**: every card quotes the fragment of the assistant's last message it answers, and the scorer prefers cards that actually reply to it.
 - Every card has to carry an **insight the user would not have produced alone** — a boundary being crossed, a concept that should split, a failure mode common in this domain — and `insight` is scored separately from `novelty`.
 - Every card is also a technical next prompt: it names a file, command, flag, test, or acceptance check, and `why` states the inference that justifies it.
 - It shows **one** move, with `why`, `evidence`, and `risk`.
