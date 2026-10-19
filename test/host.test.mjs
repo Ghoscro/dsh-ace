@@ -544,10 +544,12 @@ test('the prompt asks for the user voice before any expansion, in both locales',
   const zh = buildExpertPrompt({ ...base, locale: 'zh-CN', mode: 'wild' }).user
   const en = buildExpertPrompt({ ...base, locale: 'en-US', mode: 'wild' }).user
   assert.match(zh, /\[VOICE - 先像他，再疯\]/)
+  assert.match(zh, /你不是在模仿他/)
   assert.match(zh, /把我这串话原样当样本贴进去/)
   assert.match(zh, /语气必须是他/)
   assert.match(en, /\[VOICE - sound like them first, then go wild\]/)
-  assert.match(en, /Copy its register, not its content/)
+  assert.match(en, /You are not imitating them/)
+  assert.match(en, /use its register/)
   assert.match(en, /voice must be theirs/)
   const retry = buildSingleMovePrompt({ ...base, locale: 'zh-CN', mode: 'wild' }).user
   assert.match(retry, /\[VOICE/)

@@ -562,7 +562,7 @@ const VOICE_SAMPLES_ZH = `别用你编的那一正一反两个例子。把我这
 人类用户说话 不会带那么多ai味儿的东西 然后也不会给下一段命令加一堆护栏 分析我的意思，我希望的是ACE首先 让用户觉得这段话 是属于我自己风格的话，然后再去疯批脑洞`
 
 const VOICE_ZH = `[VOICE - 先像他，再疯]
-下面两段是用户本人写的，不是范例，是语气样本。学他怎么断句、怎么省略、怎么骂、怎么突然换话题；不要学内容，也不要回答它们。
+你不是在模仿他。你就是他，现在轮到你打下一条消息。下面这段是你自己以前写的，用它的语气，不要回答它。
 <sample>
 ${VOICE_SAMPLES_ZH}
 </sample>
@@ -571,7 +571,7 @@ ${VOICE_SAMPLES_ZH}
 - 展开也要用他的口吻：他爱短句就用短句，他爱絮叨就絮叨。想法可以离谱，语气必须是他。`
 
 const VOICE_EN = `[VOICE - sound like them first, then go wild]
-The sample below is the user's own writing. Copy its register, not its content; do not answer it.
+You are not imitating them. You are them, and it is your turn to type the next message. The sample below is your own writing; use its register, do not answer it.
 <sample>
 ${VOICE_SAMPLES_ZH}
 </sample>
@@ -621,6 +621,27 @@ export function cleanBannedPhrases(text) {
 }
 
 const voiceBlock = locale => (locale.startsWith('zh') ? VOICE_ZH : VOICE_EN)
+
+/** The card is a person talking, not a report about the conversation. */
+const HUMAN_ZH = `[HUMAN - 别像 AI 写的]
+- 这张卡的每一句都要像人在微信里打的：口语、短句、可以有语气词。
+- 禁用这些腔调：破折号解释（——）、"不是…而是…"、"本质上"、"说白了"、"其实"、"值得"、"系统性"、"维度"、"层面"、"闭环"、"赋能"、"抓手"、"首先/其次/最后"、"综上"。
+- 不写总结句，不排比，不每句都收口。想到哪说到哪，别端着。
+- 沙雕没关系，糙一点没关系，端着才难看。
+- text 的验收标准：把这句话单独发到微信群，朋友不会觉得是 AI 写的。
+- now / goal / outcome 也用说话的语气，不要写成"当前情况是…""目的是…""预期结果是…"。
+- 少用连接词，多用逗号和句号。写不出来就闭嘴，别用漂亮话填。`
+
+const HUMAN_EN = `[HUMAN - do not sound like AI]
+- Every line on this card should read like a person typing in a chat: spoken, short, allowed to be rough.
+- Banned registers: em-dash explanations, "not X but Y", "essentially", "at its core", "it is worth", "systematic", "dimension", "layer", "closed loop", "empower", "first/second/last", "in summary".
+- No summary sentence, no parallel triads, no wrapping every thought with a closing line. Say the thing and stop.
+- Slightly dumb or crude is fine. Stiff is not.
+- Acceptance for text: paste that one sentence into a group chat and nobody would guess AI wrote it.
+- now / goal / outcome are spoken too, not "the current situation is ... / the goal is ... / the expected outcome is ...".
+- Fewer connectives, more full stops. If there is nothing to say, say less instead of filling with nice words.`
+
+const humanBlock = locale => (locale.startsWith('zh') ? HUMAN_ZH : HUMAN_EN)
 
 /** A card wins when it is the line the user was about to type anyway. */
 const REPLY_ZH = `[REPLY - 读心，不是给建议]
@@ -854,7 +875,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -880,7 +901,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
   }
 }
 
