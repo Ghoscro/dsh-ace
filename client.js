@@ -5,9 +5,10 @@ const { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore 
 const NS = 'dsh-ace'
 const SETTINGS_KEY = 'dsh.composer-predict.settings.v1'
 const ROUTE = '/composer-predict/predict'
+const REJECT_ROUTE = '/composer-predict/reject'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.3'
+const ACE_VERSION = '0.5.4'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -24,7 +25,7 @@ const zh = {
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
   salvaged: '模型没按结构化格式返回，已把原文放进卡片',
   beatX: '你刚说：', beatY: '背后：', beatZ: '还会：', relation: '怎么对上：', falsify: '错了会这样',
-  now: '现在：', goal: '目的：', outcome: '做完：',
+  now: '现在：', goal: '目的：', outcome: '做完：', reject: '毙掉这张卡（记进反面锚）',
   mode: '模式', mode_safe: '保守安全', mode_standard: '常规推理', mode_brainstorm: '脑暴思维', mode_wild: '王牌预测',
 }
 const en = {
@@ -40,7 +41,7 @@ const en = {
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
   salvaged: 'The model did not return structured JSON; its raw answer is in the card',
   beatX: 'You said: ', beatY: 'Behind it: ', beatZ: 'Also: ', relation: 'How it maps: ', falsify: 'Wrong if',
-  now: 'Now: ', goal: 'Why: ', outcome: 'After: ',
+  now: 'Now: ', goal: 'Why: ', outcome: 'After: ', reject: 'Kill this card (feeds the negative anchors)',
   mode: 'Mode', mode_safe: 'Safe', mode_standard: 'Standard', mode_brainstorm: 'Brainstorm', mode_wild: 'ACE',
 }
 
@@ -800,6 +801,24 @@ function apply(ctx) {
       if (!face) return
       face.predict({ mode: 'expert', count: settingsRef.current.count, manual: true })
     }
+    // One click, no typing: killing a card is the strongest signal we get.
+    const reject = () => {
+      const item = state.candidates[0]
+      if (!item) return
+      const payload = typeof item === 'string'
+        ? { text: item, why: '', reason: '' }
+        : { text: String(item.text ?? ''), why: String(item.why ?? ''), reason: '' }
+      try {
+        fetch(REJECT_ROUTE, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ...payload, sessionId }),
+        }).catch(() => {})
+      } catch {
+        // The card still closes locally when the write cannot even start.
+      }
+      store.set({ status: 'idle', candidates: [], accepted: null, error: '', warning: '' })
+    }
 
     const update = patch => settingsStore.set(patch)
     const updateFont = value => {
@@ -822,6 +841,11 @@ function apply(ctx) {
           ? React.createElement('span', { className: 'dcp-loading' }, `${state.candidates.length}`)
           : null,
       React.createElement('span', { className: 'dcp-spacer' }),
+      state.candidates.length > 0
+        ? React.createElement('button', {
+          type: 'button', className: 'dcp-icon', title: t('reject'), 'aria-label': t('reject'), onClick: reject,
+        }, '毙')
+        : null,
       React.createElement('button', {
         type: 'button', className: 'dcp-icon', title: t('deepTitle'), 'aria-label': t('deepTitle'),
         disabled: state.status === 'loading', onClick: deep,

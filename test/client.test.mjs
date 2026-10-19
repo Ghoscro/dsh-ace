@@ -161,6 +161,7 @@ test('apply registers both composer slots and the locale dictionary', () => {
   assert.equal(dictionaries[0].dictionary.zh.now, '现在：')
   assert.equal(dictionaries[0].dictionary.zh.goal, '目的：')
   assert.equal(dictionaries[0].dictionary.zh.outcome, '做完：')
+  assert.equal(dictionaries[0].dictionary.zh.reject, '毙掉这张卡（记进反面锚）')
   assert.equal(dictionaries[0].dictionary.en.beatZ, 'Also: ')
   assert.equal(dictionaries[0].dictionary.en.relation, 'How it maps: ')
   assert.equal(dictionaries[0].dictionary.zh.falsify, '错了会这样')

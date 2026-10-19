@@ -825,6 +825,66 @@ export function readUserProfile() {
   }
 }
 
+/** Rejected cards: the user's real preference lives in what they kill. */
+function rejectLogPath() {
+  const home = process.env.DSH_HOME
+  return home ? join(home, 'diagnostics', 'ace-rejects.jsonl') : ''
+}
+
+/**
+ * Append one rejected card. The client sends the card text and an optional
+ * preset reason; no free-form typing is required.
+ * @param {{text?: string, why?: string, reason?: string, sessionId?: string}} entry - rejection.
+ * @returns {boolean} whether the row was written.
+ */
+export function appendReject(entry) {
+  const path = rejectLogPath()
+  if (!path) return false
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    appendFileSync(path, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n', 'utf8')
+    return true
+  } catch {
+    // A failed append must never break the prediction route.
+    return false
+  }
+}
+
+/**
+ * Read the most recent rejections for the prompt's negative anchors.
+ * @param {number} limit - rows to return, newest last.
+ * @returns {object[]} parsed rows.
+ */
+export function readRecentRejects(limit = 5) {
+  const path = rejectLogPath()
+  if (!path || !existsSync(path)) return []
+  try {
+    const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean).slice(-limit)
+    return lines.map(line => {
+      try {
+        return JSON.parse(line)
+      } catch {
+        return null
+      }
+    }).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Render recent rejections as prompt lines.
+ * @param {number} limit - rows to include.
+ * @returns {string} prompt block, or an empty string when nothing was rejected.
+ */
+export function rejectsBlock(limit = 5) {
+  const rows = readRecentRejects(limit)
+  if (rows.length === 0) return ''
+  return rows
+    .map(row => `- 毙掉：${clip(String(row.text ?? ''), 160)} ｜ 原因：${clip(String(row.reason ?? ''), 60) || '没说到点上'}`)
+    .join('\n')
+}
+
 /** Resolve a request's mode to one of the four, defaulting to standard. */
 export function resolveMode(value) {
   const text = typeof value === 'string' ? value.trim() : value
@@ -917,7 +977,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${roleBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[USER PROFILE]\n${clip(input.profile ?? '', 1200) || '(none)'}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${roleBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[USER PROFILE]\n${clip(input.profile ?? '', 1200) || '(none)'}${input.rejects ? `\n\n[REJECTED - 我最近毙掉的卡，别再给这些方向]\n${input.rejects}` : ''}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -943,7 +1003,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${roleBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[USER PROFILE]\n${clip(input.profile ?? '', 1200) || '(none)'}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${roleBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[USER PROFILE]\n${clip(input.profile ?? '', 1200) || '(none)'}${input.rejects ? `\n\n[REJECTED - 我最近毙掉的卡，别再给这些方向]\n${input.rejects}` : ''}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
   }
 }
 
@@ -1871,7 +1931,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   }
   const level = estimateLevel(sourceTranscript, config.level)
   const situation = buildDeterministicSituation(sourceTranscript)
-  const movesPrompt = buildExpertPrompt({ ...input, transcript: sourceTranscript, mode, level, evidence, situation, profile: readUserProfile() })
+  const movesPrompt = buildExpertPrompt({ ...input, transcript: sourceTranscript, mode, level, evidence, situation, profile: readUserProfile(), rejects: rejectsBlock() })
   let result
   let selection
   try {
@@ -1886,7 +1946,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
       shape: describeShape(result?.text),
     })
     if (signal.aborted) throw abortError(signal, 'expert stage aborted')
-    const retryPrompt = buildSingleMovePrompt({ ...input, mode, level, evidence, situation, profile: readUserProfile() })
+    const retryPrompt = buildSingleMovePrompt({ ...input, mode, level, evidence, situation, profile: readUserProfile(), rejects: rejectsBlock() })
     result = await callExpertStage(
       ctx, route, retryPrompt, config, Math.min(12_000, config.expertMovesTimeoutMs), 1400, signal,
     )
@@ -2059,6 +2119,34 @@ export async function handleRequest(ctx, config, inflight, req, res) {
         styles: ACE_MODES,
       },
     })
+    return
+  }
+  if (url.pathname === `${config.routePrefix}/reject`) {
+    // One click, no typing: the client posts the card it is killing.
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: { code: 'method-not-allowed', message: 'POST required' } })
+      return
+    }
+    let body
+    try {
+      body = await readJsonBody(req, config.maxBodyBytes)
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: { code: 'bad-request', message: String(error?.message ?? error) } })
+      return
+    }
+    const payload = body && typeof body === 'object' ? body : {}
+    const text = typeof payload.text === 'string' ? payload.text.slice(0, 1000) : ''
+    if (text.trim() === '') {
+      sendJson(res, 400, { ok: false, error: { code: 'empty-text', message: 'text required' } })
+      return
+    }
+    const written = appendReject({
+      text,
+      why: typeof payload.why === 'string' ? payload.why.slice(0, 400) : '',
+      reason: typeof payload.reason === 'string' ? payload.reason.slice(0, 120) : '',
+      sessionId: typeof payload.sessionId === 'string' ? payload.sessionId.slice(0, 200) : 'anonymous',
+    })
+    sendJson(res, 200, { ok: true, value: { written } })
     return
   }
   if (url.pathname !== `${config.routePrefix}/predict`) {

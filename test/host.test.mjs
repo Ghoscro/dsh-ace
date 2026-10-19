@@ -9,6 +9,7 @@ import {
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
   captureSample, countAnchors, estimateLevel, findBannedPhrase, judgeRelation, readProjectShape, readUserProfile, repliesTo, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
+  appendReject, readRecentRejects, rejectsBlock,
   ACE_MODES,
 } from '../index.js'
 
@@ -1082,6 +1083,22 @@ test('readUserProfile caches by mtime and reloads on change', () => {
   const future = new Date(Date.now() + 5000)
   utimesSync(path, future, future)
   assert.equal(readUserProfile(), 'second profile')
+})
+
+test('a rejection becomes a negative anchor in the next prompt', () => {
+  // The one-click kill is the cheapest signal the card can collect; it has to
+  // come back as a rejection line, not disappear.
+  assert.equal(appendReject({ text: '把重试去掉', why: '太技术', reason: '没说到点上' }), true)
+  const rows = readRecentRejects(5)
+  assert.ok(rows.length >= 1)
+  assert.equal(rows.at(-1).text, '把重试去掉')
+  const block = rejectsBlock(5)
+  assert.match(block, /毙掉：把重试去掉/)
+  const prompt = buildExpertPrompt({
+    transcript: [{ role: 'user', text: '这个按钮点不动' }], count: 4, locale: 'zh-CN', rejects: block,
+  }).user
+  assert.match(prompt, /\[REJECTED - 我最近毙掉的卡，别再给这些方向\]/)
+  assert.match(prompt, /毙掉：把重试去掉/)
 })
 
 test('a quoted reply must actually appear in the assistant message', () => {

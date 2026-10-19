@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.4 — 2026-10-19
+
+- Killing a card is one click: the card header shows 毙 while a card is up. It
+  posts the card to `/composer-predict/reject`, which appends to
+  `$DSH_HOME/diagnostics/ace-rejects.jsonl`. No typing, no dialog.
+- The last five rejections ride into the prompt as `[REJECTED]` negative
+  anchors, so a killed direction does not return under a new wording.
+
 ## 0.5.3 — 2026-10-19
 
 - ACE reads a long-lived user profile from
