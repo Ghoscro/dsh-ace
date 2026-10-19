@@ -61,7 +61,6 @@ function isHumanMessage(text: string): boolean {
   if (text.startsWith('[Image ')) return false
   return true
 }
-
 function collectMessages(root: string, limitFiles = 200): string[] {
   const files: Array<{ path: string; mtime: number }> = []
   const walk = (directory: string, depth: number): void => {
@@ -107,6 +106,9 @@ function collectMessages(root: string, limitFiles = 200): string[] {
         continue
       }
       if (object?.type !== 'user/message') continue
+      // Only messages the human actually typed carry source.kind === 'user';
+      // runtime-context and system reminders are also logged as user messages.
+      if (object.data?.source?.kind !== 'user') continue
       const message = textOf(object.data?.content)
       if (isHumanMessage(message)) messages.push(message)
     }

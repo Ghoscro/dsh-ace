@@ -800,6 +800,31 @@ const FORMAT_BLOCK = `[FORMAT - binding]
 - Keep text under 600 characters, x under 60, y and z under 140, relation under 120, falsify under 90, why under 160, risk under 160. If room runs short, shorten text first; never drop a closing brace to fit more detail.
 - If you cannot produce a schema-valid object, output a single line of plain text with your best next move instead of inventing fields; the host will salvage it.`
 
+/** Long-lived user profile, written by tools/user-profile.ts. */
+let profileCache = { path: '', mtimeMs: -1, summary: '' }
+
+/**
+ * Read the cached user profile summary. Rebuilt only when the file changes, so
+ * a prediction pays one stat() and never a model call.
+ * @returns {string} the summary, or an empty string when no profile exists.
+ */
+export function readUserProfile() {
+  const home = process.env.DSH_HOME
+  if (!home) return ''
+  const path = join(home, 'diagnostics', 'ace-profile.json')
+  try {
+    const info = statSync(path)
+    if (profileCache.path === path && profileCache.mtimeMs === info.mtimeMs) return profileCache.summary
+    const data = JSON.parse(readFileSync(path, 'utf8'))
+    const summary = typeof data?.summary === 'string' ? data.summary.trim() : ''
+    profileCache = { path, mtimeMs: info.mtimeMs, summary }
+    return summary
+  } catch {
+    // No profile yet is the normal first-run state, not an error.
+    return ''
+  }
+}
+
 /** Resolve a request's mode to one of the four, defaulting to standard. */
 export function resolveMode(value) {
   const text = typeof value === 'string' ? value.trim() : value
@@ -892,7 +917,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${roleBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${roleBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[USER PROFILE]\n${clip(input.profile ?? '', 1200) || '(none)'}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -918,7 +943,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${roleBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${roleBlock(locale)}\n\n${humanBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${insightBlock(locale)}\n\n${plainBlock(locale)}\n\n${replyBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n${levelBlock(locale, input.level ?? 'working')}\n\n[USER PROFILE]\n${clip(input.profile ?? '', 1200) || '(none)'}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
   }
 }
 
@@ -1846,7 +1871,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   }
   const level = estimateLevel(sourceTranscript, config.level)
   const situation = buildDeterministicSituation(sourceTranscript)
-  const movesPrompt = buildExpertPrompt({ ...input, transcript: sourceTranscript, mode, level, evidence, situation })
+  const movesPrompt = buildExpertPrompt({ ...input, transcript: sourceTranscript, mode, level, evidence, situation, profile: readUserProfile() })
   let result
   let selection
   try {
@@ -1861,7 +1886,7 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
       shape: describeShape(result?.text),
     })
     if (signal.aborted) throw abortError(signal, 'expert stage aborted')
-    const retryPrompt = buildSingleMovePrompt({ ...input, mode, level, evidence, situation })
+    const retryPrompt = buildSingleMovePrompt({ ...input, mode, level, evidence, situation, profile: readUserProfile() })
     result = await callExpertStage(
       ctx, route, retryPrompt, config, Math.min(12_000, config.expertMovesTimeoutMs), 1400, signal,
     )

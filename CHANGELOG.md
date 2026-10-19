@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.3 — 2026-10-19
+
+- ACE reads a long-lived user profile from
+  `$DSH_HOME/diagnostics/ace-profile.json`: writing length, punctuation density,
+  recurring openers, working topics and repeated constraints, built from the
+  user's own messages across sessions. The prompt carries a `[USER PROFILE]`
+  block before the situation, loaded by file mtime so a prediction pays one
+  `stat()` and no model call.
+- `tools/user-profile.ts` builds and, with `--write`, refreshes that file. With
+  no profile the block is `(none)` and nothing else changes.
+- The profile is sent to the model with every prediction; it lives only on this
+  machine and is never written into a session.
+
 ## 0.5.2 — 2026-10-19
 
 - The card is written from inside the user's position: a ROLE block says the

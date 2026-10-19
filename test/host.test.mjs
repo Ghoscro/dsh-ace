@@ -1,14 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
-import { mkdtempSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, mkdirSync, writeFileSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
-  captureSample, countAnchors, estimateLevel, findBannedPhrase, judgeRelation, readProjectShape, repliesTo, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
+  captureSample, countAnchors, estimateLevel, findBannedPhrase, judgeRelation, readProjectShape, readUserProfile, repliesTo, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
   ACE_MODES,
 } from '../index.js'
 
@@ -1061,6 +1061,27 @@ test('the plain block reaches both prompts', () => {
   assert.match(zh, /不用未解释的缩写、模块名、命令、函数名/)
   assert.match(en, /\[PLAIN - three plain lines on every card\]/)
   assert.match(en, /what is happening now, what this step is for/)
+})
+
+test('the user profile is injected into the prompt', () => {
+  const base = { transcript: [{ role: 'user', text: '这个按钮点不动' }], count: 4, mode: 'standard' }
+  const withProfile = buildExpertPrompt({ ...base, locale: 'zh-CN', profile: '- Writes 268 chars on average' }).user
+  assert.match(withProfile, /\[USER PROFILE\]/)
+  assert.match(withProfile, /Writes 268 chars/)
+  const without = buildExpertPrompt({ ...base, locale: 'zh-CN' }).user
+  assert.match(without, /\[USER PROFILE\]\n\(none\)/)
+})
+
+test('readUserProfile caches by mtime and reloads on change', () => {
+  const directory = join(process.env.DSH_HOME, 'diagnostics')
+  mkdirSync(directory, { recursive: true })
+  const path = join(directory, 'ace-profile.json')
+  writeFileSync(path, JSON.stringify({ summary: 'first profile' }))
+  assert.equal(readUserProfile(), 'first profile')
+  writeFileSync(path, JSON.stringify({ summary: 'second profile' }))
+  const future = new Date(Date.now() + 5000)
+  utimesSync(path, future, future)
+  assert.equal(readUserProfile(), 'second profile')
 })
 
 test('a quoted reply must actually appear in the assistant message', () => {
