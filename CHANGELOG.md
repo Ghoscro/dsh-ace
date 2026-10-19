@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.5 — 2026-10-19
+
+- Ghost text instead of a whole card: stop typing for three seconds and ACE asks
+  for the missing tail of the draft, painted in grey after the caret. `Tab`
+  accepts it into the draft; typing anything drops it; a caret that is not at
+  the end hides it instead of painting over what is already written.
+- `POST /composer-predict/inline` makes one short call with the user profile and
+  returns only the completion. `cleanInline` strips a repeated draft prefix so
+  the ghost never repeats what is on screen.
+- Config: `inlineMaxTokens` (default 120) and `inlineTimeoutMs` (default 6000).
+
 ## 0.5.4 — 2026-10-19
 
 - Killing a card is one click: the card header shows 毙 while a card is up. It

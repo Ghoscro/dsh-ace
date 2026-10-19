@@ -8,6 +8,7 @@ import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
+  buildInlinePrompt, cleanInline,
   captureSample, countAnchors, estimateLevel, findBannedPhrase, judgeRelation, readProjectShape, readUserProfile, repliesTo, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
   appendReject, readRecentRejects, rejectsBlock,
   ACE_MODES,
@@ -1099,6 +1100,19 @@ test('a rejection becomes a negative anchor in the next prompt', () => {
   }).user
   assert.match(prompt, /\[REJECTED - 我最近毙掉的卡，别再给这些方向\]/)
   assert.match(prompt, /毙掉：把重试去掉/)
+})
+
+test('inline completion keeps only the missing tail', () => {
+  assert.equal(cleanInline('这个功能先别急', '这个功能先'), '别急')
+  assert.equal(cleanInline('先别急着上线', '这个功能先'), '先别急着上线')
+  assert.equal(cleanInline('"别急"', '这个功能先'), '别急')
+  assert.equal(cleanInline('', 'x'), '')
+})
+
+test('the inline prompt asks for the tail only', () => {
+  const prompt = buildInlinePrompt({ draft: '这个功能先', transcript: [{ role: 'user', text: '在改 ACE' }], locale: 'zh-CN' })
+  assert.match(prompt.system, /补完后半句/)
+  assert.match(prompt.user, /\[DRAFT\]\n这个功能先/)
 })
 
 test('a quoted reply must actually appear in the assistant message', () => {

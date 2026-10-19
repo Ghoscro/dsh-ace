@@ -6,9 +6,10 @@ const NS = 'dsh-ace'
 const SETTINGS_KEY = 'dsh.composer-predict.settings.v1'
 const ROUTE = '/composer-predict/predict'
 const REJECT_ROUTE = '/composer-predict/reject'
+const INLINE_ROUTE = '/composer-predict/inline'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.4'
+const ACE_VERSION = '0.5.5'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -498,6 +499,7 @@ function apply(ctx) {
     '.dcp-why{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.66;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-x{font-size:var(--dsh-fs-meta,13px);line-height:1.4;opacity:.6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-plain{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.8;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-ghost{position:fixed;pointer-events:none;z-index:60;box-sizing:border-box;white-space:pre-wrap;overflow:hidden;color:var(--dsw-alias-label-tertiary,#9aa0a6);opacity:.7}',
     '.dcp-z{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.64;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-rel{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.72;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-beat{font-weight:700;opacity:.82;margin-right:2px}',
@@ -580,6 +582,124 @@ function apply(ctx) {
         if (frame) window.cancelAnimationFrame(frame)
         if (resize) resize.disconnect()
         if (mutation) mutation.disconnect()
+      }
+    }, [])
+
+    // Ghost text: after the draft sits still for a moment, ask for the missing
+    // tail and paint it after the caret. Tab accepts, any further typing drops it.
+    useEffect(() => {
+      if (typeof document === 'undefined') return undefined
+      const textareaOf = () => document.querySelector('[data-composer-card] textarea')
+      let layer = null
+      let timer = 0
+      let seq = 0
+      let completion = ''
+
+      const hide = () => {
+        completion = ''
+        if (layer) layer.style.display = 'none'
+      }
+
+      const place = element => {
+        if (!layer) return
+        const rect = element.getBoundingClientRect()
+        const style = window.getComputedStyle(element)
+        const padLeft = parseFloat(style.paddingLeft) || 0
+        const padTop = parseFloat(style.paddingTop) || 0
+        const padRight = parseFloat(style.paddingRight) || 0
+        layer.style.left = `${rect.left + padLeft}px`
+        layer.style.top = `${rect.top + padTop}px`
+        layer.style.width = `${Math.max(0, rect.width - padLeft - padRight)}px`
+        layer.style.height = `${Math.max(0, rect.height - padTop - (parseFloat(style.paddingBottom) || 0))}px`
+        layer.style.font = style.font
+        layer.style.lineHeight = style.lineHeight
+        layer.style.letterSpacing = style.letterSpacing
+      }
+
+      const paint = draft => {
+        const element = textareaOf()
+        if (!element || !completion) return hide()
+        // Only paint behind a caret that sits at the end of the draft: a ghost
+        // in the middle of the text would cover what the user already wrote.
+        if (element.selectionStart !== element.value.length || element.value !== draft) return hide()
+        if (!layer) {
+          layer = document.createElement('div')
+          layer.className = 'dcp-ghost'
+          layer.setAttribute('aria-hidden', 'true')
+          document.body.appendChild(layer)
+        }
+        place(element)
+        layer.style.display = 'block'
+        const hidden = document.createElement('span')
+        hidden.style.visibility = 'hidden'
+        hidden.textContent = draft
+        const ghost = document.createElement('span')
+        ghost.textContent = completion
+        layer.replaceChildren(hidden, ghost)
+        layer.scrollTop = element.scrollTop
+      }
+
+      const ask = draft => {
+        const id = ++seq
+        fetch(INLINE_ROUTE, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ draft, transcript: face ? face.readTranscript() : [], sessionId }),
+        }).then(response => response.json()).then(payload => {
+          if (id !== seq) return
+          const next = typeof payload?.value?.completion === 'string' ? payload.value.completion.trim() : ''
+          if (!next) return hide()
+          completion = next
+          paint(draft)
+        }).catch(hide)
+      }
+
+      const schedule = draft => {
+        window.clearTimeout(timer)
+        hide()
+        if (!draft.trim()) return
+        timer = window.setTimeout(() => ask(draft), 3000)
+      }
+
+      const onInput = event => {
+        const element = textareaOf()
+        if (!element || event.target !== element) return
+        schedule(element.value)
+      }
+
+      const onKeyDown = event => {
+        if (event.key !== 'Tab' || !completion) return
+        const element = textareaOf()
+        if (!element || document.activeElement !== element) return
+        if (element.selectionStart !== element.value.length) return
+        event.preventDefault()
+        event.stopPropagation()
+        const next = element.value + completion
+        hide()
+        if (inputActions && typeof inputActions.setDraft === 'function') {
+          inputActions.setDraft(next)
+        } else {
+          element.value = next
+        }
+      }
+
+      const onFocusOut = event => {
+        if (event.target === textareaOf()) hide()
+      }
+
+      document.addEventListener('input', onInput, true)
+      document.addEventListener('keydown', onKeyDown, true)
+      document.addEventListener('focusout', onFocusOut, true)
+      window.addEventListener('resize', hide)
+      return () => {
+        window.clearTimeout(timer)
+        document.removeEventListener('input', onInput, true)
+        document.removeEventListener('keydown', onKeyDown, true)
+        document.removeEventListener('focusout', onFocusOut, true)
+        window.removeEventListener('resize', hide)
+        hide()
+        if (layer && layer.parentNode) layer.parentNode.removeChild(layer)
+        layer = null
       }
     }, [])
 

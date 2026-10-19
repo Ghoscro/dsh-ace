@@ -229,6 +229,9 @@ export function normalizeConfig(config = {}) {
       : 'low',
     expertSituationTimeoutMs: clampInt(source.expertSituationTimeoutMs, 5000, 30000, 12_000),
     expertMovesTimeoutMs: clampInt(source.expertMovesTimeoutMs, 8000, 45000, 25_000),
+    // Ghost-text completion: one short call, low latency budget.
+    inlineMaxTokens: clampInt(source.inlineMaxTokens, 24, 400, 120),
+    inlineTimeoutMs: clampInt(source.inlineTimeoutMs, 2000, 20_000, 6000),
     temperature: clampNumber(source.temperature, 0, 1.5, 0.8),
     timeoutMs: clampInt(source.timeoutMs, 2000, 20_000, 15_000),
     maxAttempts: clampInt(source.maxAttempts, 1, 2, 2),
@@ -885,8 +888,7 @@ export function rejectsBlock(limit = 5) {
     .join('\n')
 }
 
-/** Resolve a request's mode to one of the four, defaulting to standard. */
-export function resolveMode(value) {
+/** Resolve a request's mode to one of the four, defaulting to standard. */export function resolveMode(value) {
   const text = typeof value === 'string' ? value.trim() : value
   return ACE_MODES.includes(text) ? text : 'standard'
 }
@@ -1089,6 +1091,42 @@ export function judgeRelation({ x = '', z = '', relation = '', surfaceLike = nul
   // It has to say the two things are the same kind of thing.
   const connectors = /(都是|也是|同样|一样|因为|所以|相当于|同一个|同一|对应|映射|只是|跟.{0,12}一样|和.{0,12}一样|\bsame\b|\bboth\b|\bbecause\b|shared|maps? to)/i
   return connectors.test(text)
+}
+
+/** Ghost text: finish the sentence the user stopped typing. */
+export function buildInlinePrompt(input) {
+  const transcript = Array.isArray(input.transcript) ? input.transcript : []
+  const thread = transcriptWindow(transcript)
+    .slice(-6)
+    .map(row => `${row.role}: ${clip(row.text, row.role === 'assistant' ? 600 : 300)}`)
+    .join('\n') || '(none)'
+  const locale = typeof input.locale === 'string' ? input.locale.toLowerCase() : 'zh'
+  const system = locale.startsWith('zh')
+    ? '你只干一件事：把用户正在打的那句话补完后半句。只输出补的那部分，重复的不要，20 字以内，口语，不加句号，不解释，不换行。'
+    : 'You do one thing: finish the sentence the user is typing. Output only the missing part, at most 12 words, spoken, no closing punctuation, no explanation, one line.'
+  const user = `[DRAFT]\n${clip(input.draft ?? '', 400)}\n\n[THREAD]\n${thread}\n\n[PROFILE]\n${clip(input.profile ?? '', 800) || '(none)'}`
+  return { system, user }
+}
+
+/**
+ * Keep only the missing tail: models like to repeat the draft before finishing it.
+ * @param {string} text - raw model answer.
+ * @param {string} draft - what the user already typed.
+ * @returns {string} the appendable completion, bounded to 40 chars.
+ */
+export function cleanInline(text, draft = '') {
+  let out = String(text ?? '')
+    .replace(/^```[a-z]*\s*/i, '')
+    .replace(/```$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  out = out.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim()
+  if (out === '') return ''
+  const tail = String(draft ?? '')
+  if (tail && out.startsWith(tail)) out = out.slice(tail.length).trim()
+  const overlap = tail.slice(-10)
+  if (overlap && out.startsWith(overlap)) out = out.slice(overlap.length).trim()
+  return out.slice(0, 40)
 }
 
 export function parseExpertSelection(text, count = 5) {
@@ -1909,6 +1947,21 @@ async function rewriteWithoutBanned(ctx, route, config, input, text, signal) {
   return cleaned.length > 1200 ? cleaned.slice(0, 1200) : cleaned
 }
 
+/**
+ * Ask for the missing tail of the draft. One short call, no candidate list.
+ * @param {import('@deepseek-ai/cordis').Context} ctx - host context.
+ * @param {ReturnType<typeof normalizeConfig>} config - plugin config.
+ * @param {{draft: string, transcript?: object[], locale?: string}} input - request data.
+ * @param {AbortSignal} signal - cancellation.
+ * @returns {Promise<{completion: string, model: string, usage: object|null}>} completion.
+ */
+export async function generateInlineCompletion(ctx, config, input, signal) {
+  const route = resolveModel(ctx, config)
+  const prompt = buildInlinePrompt({ ...input, profile: readUserProfile() })
+  const result = await callExpertStage(ctx, route, prompt, config, config.inlineTimeoutMs, config.inlineMaxTokens, signal)
+  return { completion: cleanInline(result.text, input.draft), model: `${route.provider}/${route.model}`, usage: result.usage }
+}
+
 export async function generateExpertPrediction(ctx, config, input, signal) {
   const route = resolveModel(ctx, config)
   const mode = resolveMode(input.style ?? input.mode)
@@ -2147,6 +2200,41 @@ export async function handleRequest(ctx, config, inflight, req, res) {
       sessionId: typeof payload.sessionId === 'string' ? payload.sessionId.slice(0, 200) : 'anonymous',
     })
     sendJson(res, 200, { ok: true, value: { written } })
+    return
+  }
+  if (url.pathname === `${config.routePrefix}/inline`) {
+    // Ghost text: the browser asks once the draft has been still for a while.
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { ok: false, error: { code: 'method-not-allowed', message: 'POST required' } })
+      return
+    }
+    let body
+    try {
+      body = await readJsonBody(req, config.maxBodyBytes)
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: { code: 'bad-request', message: String(error?.message ?? error) } })
+      return
+    }
+    const payload = body && typeof body === 'object' ? body : {}
+    const draft = typeof payload.draft === 'string' ? payload.draft.slice(0, 500) : ''
+    if (draft.trim() === '') {
+      sendJson(res, 200, { ok: true, value: { completion: '' } })
+      return
+    }
+    const transcript = sanitizeTranscript(payload.transcript, config)
+    const controller = new AbortController()
+    try {
+      const result = await generateInlineCompletion(
+        ctx,
+        config,
+        { draft, transcript, locale: typeof payload.locale === 'string' ? payload.locale.slice(0, 40) : 'zh-CN' },
+        controller.signal,
+      )
+      sendJson(res, 200, { ok: true, value: { completion: result.completion } })
+    } catch (error) {
+      // Inline completion is best-effort: a failure is an empty ghost, never an error card.
+      sendJson(res, 200, { ok: true, value: { completion: '', error: String(error?.message ?? error).slice(0, 200) } })
+    }
     return
   }
   if (url.pathname !== `${config.routePrefix}/predict`) {
