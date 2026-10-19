@@ -11,7 +11,7 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.14'
+const ACE_VERSION = '0.5.15'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -503,9 +503,7 @@ function apply(ctx) {
     '.dcp-plain{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.8;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-ghost{position:fixed;pointer-events:none;z-index:60;box-sizing:border-box;white-space:pre-wrap;overflow:hidden;color:var(--dsw-alias-label-tertiary,#9aa0a6);opacity:.7}',
     '.dcp-ghost-hint{font-size:var(--dcp-hint-size,9px);line-height:1;color:#fff;opacity:.55;letter-spacing:.06em}',
-    '.dcp-chain{position:fixed;z-index:61;display:flex;gap:3px;pointer-events:none}',
-    '.dcp-chain span{width:5px;height:5px;border-radius:50%;background:rgba(127,127,127,.3)}',
-    '.dcp-chain span[data-on=true]{background:#3ddc84;box-shadow:0 0 4px rgba(61,220,132,.8)}',
+    '.dcp-trace{position:fixed;z-index:61;pointer-events:none;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dsw-alias-label-tertiary,#9aa0a6);opacity:.8;white-space:pre}',
     '.dcp-z{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.64;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-rel{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.72;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-beat{font-weight:700;opacity:.82;margin-right:2px}',
@@ -599,37 +597,50 @@ function apply(ctx) {
       let layer = null
       let completion = ''
       let expanded = false
-      // Four lamps: key received, expanded, local text, model text. They turn
-      // on as each stage passes, so a stall is visible without a restart.
+      // One text line per F1 press, newest at the bottom, oldest still visible:
+      // 18:41 键✓ 展开✓ 本地空 模型空
       const chain = { key: false, expanded: false, local: false, model: false }
-      let chainLayer = null
+      const rounds = []
+      let traceLayer = null
 
-      const drawChain = () => {
+      const clock = date => `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+
+      const renderTrace = () => {
         if (typeof document === 'undefined') return
         const element = textareaOf()
-        if (!chainLayer || !chainLayer.isConnected) {
-          chainLayer = document.createElement('div')
-          chainLayer.className = 'dcp-chain'
-          chainLayer.setAttribute('aria-hidden', 'true')
-          for (let index = 0; index < 4; index += 1) {
-            const dot = document.createElement('span')
-            dot.dataset.on = 'false'
-            chainLayer.appendChild(dot)
-          }
-          document.body.appendChild(chainLayer)
+        if (rounds.length === 0) {
+          if (traceLayer) traceLayer.style.display = 'none'
+          return
+        }
+        if (!traceLayer || !traceLayer.isConnected) {
+          traceLayer = document.createElement('div')
+          traceLayer.className = 'dcp-trace'
+          traceLayer.setAttribute('aria-hidden', 'true')
+          document.body.appendChild(traceLayer)
         }
         if (!element) {
-          chainLayer.style.display = 'none'
+          traceLayer.style.display = 'none'
           return
         }
         const rect = element.getBoundingClientRect()
-        chainLayer.style.left = `${Math.max(0, rect.right - 46)}px`
-        chainLayer.style.top = `${Math.max(0, rect.top + 5)}px`
-        chainLayer.style.display = 'flex'
-        chainLayer.children[0].dataset.on = String(chain.key)
-        chainLayer.children[1].dataset.on = String(chain.expanded)
-        chainLayer.children[2].dataset.on = String(chain.local)
-        chainLayer.children[3].dataset.on = String(chain.model)
+        traceLayer.style.left = `${Math.max(0, rect.left + 4)}px`
+        traceLayer.style.top = `${Math.max(0, rect.bottom + 24)}px`
+        traceLayer.style.display = 'block'
+        traceLayer.replaceChildren(...rounds.map(round => {
+          const line = document.createElement('div')
+          line.textContent = `${clock(round.at)} 键${round.key ? '✓' : '空'} 展开${round.expanded ? '✓' : '空'} 本地${round.local ? '✓' : '空'} 模型${round.model ? '✓' : '空'}`
+          return line
+        }))
+      }
+
+      const pushRound = () => {
+        rounds.push({ at: new Date(), key: true, expanded, local: chain.local, model: chain.model })
+        if (rounds.length > 8) rounds.shift()
+        renderTrace()
+      }
+
+      const drawChain = () => {
+        renderTrace()
       }
 
       const hide = () => {
@@ -732,7 +743,8 @@ function apply(ctx) {
           if (id !== localSeq) return
           const next = typeof payload?.value?.completion === 'string' ? payload.value.completion.trim() : ''
           chain.local = next !== ''
-          drawChain()
+          if (rounds.length > 0) rounds[rounds.length - 1].local = chain.local
+          renderTrace()
           // The model answer wins when it lands first; local only fills the gap.
           if (!next || completion) return
           remember(draft, next)
@@ -781,6 +793,7 @@ function apply(ctx) {
               if (typeof payload.full === 'string' && payload.full !== '') {
                 lastLatency = Date.now() - started
                 chain.model = true
+                if (rounds.length > 0) rounds[rounds.length - 1].model = true
                 completion = payload.full
                 paint(draft)
               }
@@ -832,6 +845,7 @@ function apply(ctx) {
             chain.key = true
             expanded = !expanded
             chain.expanded = expanded
+            pushRound()
             paint(element.value)
             return
           }
@@ -869,8 +883,8 @@ function apply(ctx) {
         hide()
         if (layer && layer.parentNode) layer.parentNode.removeChild(layer)
         layer = null
-        if (chainLayer && chainLayer.parentNode) chainLayer.parentNode.removeChild(chainLayer)
-        chainLayer = null
+        if (traceLayer && traceLayer.parentNode) traceLayer.parentNode.removeChild(traceLayer)
+        traceLayer = null
       }
     }, [])
 

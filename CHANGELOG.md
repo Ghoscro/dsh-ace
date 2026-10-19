@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.15 — 2026-10-19
+
+- The four lamps became a text trace under the composer: every F1 press appends
+  one line such as `18:41 键✓ 展开✓ 本地空 模型空`. The last eight presses stay
+  on screen, so the previous attempt can be read without pressing again.
+
 ## 0.5.14 — 2026-10-19
 
 - Four diagnostic lamps in the top-right corner of the composer, left to right:
