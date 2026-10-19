@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Every card is now grounded as a technical next prompt: the prompt asks for a
+  named file, command, flag, test or acceptance check plus the inference behind
+  it, and the scorer gives concrete steps a small bonus over vague prose.
+
 ## 0.2.0 — 2026-10-19
 
 - The fourth mode is named 王牌预测 in the Chinese UI and ACE in the English

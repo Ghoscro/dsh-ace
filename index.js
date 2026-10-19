@@ -492,7 +492,7 @@ export const MODE_MAX_TOKENS = { safe: 2200, standard: 4000, brainstorm: 5600, w
 
 const MODE_POLICY = {
   safe: 'MODE safe: reversible, small, cheap-to-undo steps. Say how each move rolls back. Prefer the smallest step that still tests the real question; do not demand a rewrite or a new dependency when a reversible step exists.',
-  standard: 'MODE standard: the next step a competent engineer would actually take. Be direct and opinionated, name the concrete file, command or decision, and skip hedging.',
+  standard: 'MODE standard: the next concrete technical step a competent engineer would take. Name the file, command or check that changes state, say what result would count as success, and skip hedging.',
   brainstorm: 'MODE brainstorm: open the space. Candidates must differ in kind, not wording: different mechanism, different field, different ambition. Two candidates may never be the same idea rephrased.',
   wild: 'MODE wild: break the boundary the user imagined. Recombine mechanisms from unrelated fields, follow second- and third-order consequences, challenge the premise when the evidence allows, and write the move with enough concrete detail that another AI could start from it. Use the room you have; do not compress in order to stay brief.',
 }
@@ -568,6 +568,21 @@ export function cleanBannedPhrases(text) {
 }
 
 const voiceBlock = locale => (locale.startsWith('zh') ? VOICE_ZH : VOICE_EN)
+
+/** Every card is a technical next prompt, not a vibe. Static so it caches. */
+const TECH_ZH = `[TECH - 这张卡是一句能直接开工的下一轮 prompt]
+- text 必须是一句可以直接发出去的技术指令：至少点名一个文件、命令、参数、测试或验收标准。不要"优化一下""再看看""继续推进"这种空话。
+- 先站住一个推理：从对话或证据里的具体对象（报错、文件名、数字、行为）推出一个缺口，这一步就是为了补它。why 用一句话说清这条推理，不要复述常识。
+- 证据不够时，在 text 或 why 里写明你在假设什么（例如"先假设重试是测试里加的"），不要把猜测写成事实。
+- standard 和 brainstorm 优先给"做完就能验证"的一步；wild 可以大，但要大到能拆成具体动作。`
+
+const TECH_EN = `[TECH - this card is a technical next prompt the user can send as-is]
+- text must be an instruction naming at least one concrete object: a file, command, flag, test, or acceptance check. No "polish it", "take another look", or "keep going".
+- Stand on a reason: infer a specific gap from a named object in the conversation or evidence (an error, a file, a number, a behavior), and make this step close that gap. why states the inference in one line, not common sense.
+- When the evidence is thin, write the assumption into text or why ("assuming the retry lives in the test"), never as fact.
+- standard and brainstorm prefer a step whose result is checkable; wild may be big, but big enough to break into concrete actions.`
+
+const techBlock = locale => (locale.startsWith('zh') ? TECH_ZH : TECH_EN)
 
 /** The output contract is restated last so a long mode prompt cannot bury it. */
 const FORMAT_BLOCK = `[FORMAT - binding]
@@ -667,7 +682,7 @@ export function buildExpertPrompt(input) {
     .join('\n') || '(none)'
   return {
     system: locale.startsWith('zh') ? ZH_EXPERT : EN_EXPERT,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[mode]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 8000)}\n\n[OUT]\nN=${count}, mode=${mode}, language=${locale.startsWith('zh') ? 'zh' : 'en'}`,
   }
 }
 
@@ -693,7 +708,7 @@ JSON fields: text, why, evidence, risk, action, value, novelty, worth_extra_step
 No array, no multi-line objects, no markdown. text is the user's sendable voice; why is shown, not sent; never invent.`
   return {
     system,
-    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
+    user: `${MODE_DISCIPLINE}\n\n${voiceBlock(locale)}\n\n${bannedBlock(locale)}\n\n${techBlock(locale)}\n\n${FORMAT_BLOCK}\n\n[THREAD]\n${thread}\n\n[MODE]\n${MODE_POLICY[resolveMode(input.mode)]}\n\n[SITUATION]\n${JSON.stringify(input.situation ?? {}, null, 2)}\n\n[EVIDENCE]\n${clip(input.evidence ?? '(none)', 6000)}\n\n[OUT]\nN=1`,
   }
 }
 
@@ -821,6 +836,30 @@ export function parseExpertMoves(text, count) {
  * @param {object} move - parsed move.
  * @returns {number} 0-14ish composite score.
  */
+/**
+ * Count concrete anchors in a card: files, commands, flags, numbers, calls.
+ * Vague prose scores zero and loses ties to a step the user can actually run.
+ * @param {string} text - candidate text.
+ * @returns {number} number of distinct anchors (capped at 3).
+ */
+export function countAnchors(text) {
+  const value = String(text ?? '')
+  const patterns = [
+    /`[^`]+`/g,
+    /[\w./-]+\.(?:ts|tsx|js|mjs|cjs|json|ya?ml|md|py|sh|rs|go|java|toml)\b/gi,
+    /\b(?:npm|pnpm|yarn|node|git|rg|grep|curl|pytest|make|cargo|go|docker)\b/g,
+    /--[a-z][a-z-]*/g,
+    /\b\d+(?:\.\d+)?\b/g,
+    /[A-Za-z_][\w.]*\([^)]*\)/g,
+    /(?:^|\s)[~/][\w./-]+/g,
+  ]
+  const found = new Set()
+  for (const pattern of patterns) {
+    for (const match of value.match(pattern) ?? []) found.add(match.trim().toLowerCase())
+  }
+  return Math.min(3, found.size)
+}
+
 export function scoreMove(move) {
   const actionBonus = {
     advance: 1.2,
@@ -839,6 +878,7 @@ export function scoreMove(move) {
     - riskPenalty
     + (move.evidence ? 0.2 : 0)
     + (move.over_obvious ? 0.2 : 0)
+    + Math.min(1.2, countAnchors(move.text) * 0.4)
 }
 
 /**

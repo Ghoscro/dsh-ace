@@ -34,6 +34,7 @@ Most next-message tools optimize for **what you would probably type**. ACE optim
 
 - It generates 3–5 different directions internally: advance, use an existing tool, reframe, verify, clarify, constrain, close.
 - It scores them for `value`, `novelty`, `worth_extra_step`, and action type.
+- Every card is a technical next prompt: it names a file, command, flag, test, or acceptance check, and `why` states the inference that justifies it.
 - It shows **one** move, with `why`, `evidence`, and `risk`.
 - If nothing beats the obvious “continue”, it shows **nothing**. A quiet card is a feature.
 - `Tab` fills the draft. You can edit it. ACE never sends for you.

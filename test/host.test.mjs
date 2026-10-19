@@ -8,7 +8,7 @@ import {
   buildExpertPrompt, buildPrompt, buildSingleMovePrompt, buildSituationPrompt, collectEvidence, generateExpertPrediction,
   generatePrediction, handleRequest, normalizeConfig, parseCandidates, parseExpertMoves,
   parseExpertSelection, parseSituation, resolveMode, resolveModel, salvageExpertText, sanitizeTranscript, selectBestMove,
-  captureSample, findBannedPhrase, cleanBannedPhrases, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
+  captureSample, countAnchors, findBannedPhrase, cleanBannedPhrases, scoreMove, logUsage, normalizeUsage, sweepThresholds, transcriptWindow, usageCost,
   ACE_MODES,
 } from '../index.js'
 
@@ -864,4 +864,32 @@ test('the threshold sweep counts cards without calling the model', () => {
   assert.equal(rows[0].cards, 3, 'the empty move list never counts')
   assert.equal(rows[0].gained, 2)
   assert.equal(rows[0].silent, 1)
+})
+
+test('concrete anchors are counted, vague prose is not', () => {
+  assert.equal(countAnchors('继续推进一下'), 0)
+  assert.equal(countAnchors('再看看'), 0)
+  const concrete = '把 x.test.ts 里的 retry 去掉，跑 `npm test -- --test-name-pattern 竞态` 一次'
+  assert.ok(countAnchors(concrete) >= 2, `expected at least two anchors, got ${countAnchors(concrete)}`)
+  assert.equal(countAnchors('a.ts b.ts c.ts d.ts e.ts f.ts'), 3, 'capped at three')
+})
+
+test('a concrete step beats a vague one at equal scores', () => {
+  const base = { action: 'advance', value: 7, novelty: 5, worth_extra_step: 7, evidence: '', over_obvious: '' }
+  const vague = { ...base, text: '继续优化一下' }
+  const concrete = { ...base, text: '把 x.test.ts 的 retry 去掉，跑 npm test 一次看还挂不挂' }
+  assert.ok(scoreMove(concrete) > scoreMove(vague) + 0.5)
+  const chosen = selectBestMove({ moves: [vague, concrete], bestIndex: null, comparison: '' }, 5)
+  assert.equal(chosen.text, concrete.text)
+})
+
+test('the technical-grounding block is in both prompts and both locales', () => {
+  const base = { transcript: [{ role: 'user', text: '修测试' }], count: 4 }
+  const zh = buildExpertPrompt({ ...base, locale: 'zh-CN', mode: 'standard' }).user
+  const en = buildExpertPrompt({ ...base, locale: 'en-US', mode: 'standard' }).user
+  assert.match(zh, /\[TECH - 这张卡是一句能直接开工的下一轮 prompt\]/)
+  assert.match(zh, /至少点名一个文件、命令、参数、测试或验收标准/)
+  assert.match(en, /\[TECH - this card is a technical next prompt the user can send as-is\]/)
+  assert.match(en, /naming at least one concrete object/)
+  assert.match(buildSingleMovePrompt({ ...base, locale: 'zh-CN', mode: 'wild' }).user, /\[TECH/)
 })
