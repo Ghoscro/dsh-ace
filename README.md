@@ -26,7 +26,7 @@ pnpm add file:/absolute/path/to/ghoscro-dsh-ace-0.5.23.tgz
 
 Then add `"@ghoscro/dsh-ace"` to `dsh.profile.bundles`, materialize the profile (DSH plugin page or `pnpm install`), and restart DSH. The composer row shows **✦ ACE** (**✦ 深度预测** in the Chinese UI).
 
-Developer install (copy this directory into `sakura/packages/`) is at the end of [INSTALL.md](INSTALL.md). Verified host: **DSH 0.2.1-rc.2**; other versions are unverified.
+If an install goes wrong, [INSTALL.md](INSTALL.md) has the two-step recovery: remove the bundle entry, restart. A failed entry does not stop DSH from booting. Developer install (copy this directory into `sakura/packages/`) is also there. Verified host: **DSH 0.2.1-rc.2**; other versions are unverified.
 
 ## What it does
 

@@ -60,6 +60,21 @@ The tarball contains only the explicit `files` list. Inspect it before sharing: 
 - The card appears above the composer after a completed turn when automatic ACE is on, or after clicking the button.
 - `Tab` fills the draft. ACE does not send.
 
+## If a release breaks the composer
+
+A broken plugin does not stop DSH from booting: the entry fails to activate and the
+rest of the harness starts normally. Recovery takes one edit and one restart.
+
+1. Remove `"@ghoscro/dsh-ace"` from `dsh.profile.bundles` in the profile `package.json`.
+   Leave the dependency in place; this disables ACE without touching anything else.
+2. Restart DSH and confirm the composer is back.
+3. Install a known-good tarball (or remove the dependency entirely once you no longer
+   want it).
+
+When reporting the problem, include the build id from `<html data-ace-version>` and the
+last lines of `<DSH_HOME>/diagnostics/dsh-ace-errors.jsonl`; both are written without
+transcript content.
+
 ## Uninstall / rollback
 
 1. Remove `@ghoscro/dsh-ace` from `dsh.profile.bundles` and from `dependencies`.
