@@ -26,7 +26,7 @@ const zh = {
   button: '深度预测', buttonTitle: '生成一条深度预测（Tab 采用）',
   deep: '深度预测', deepTitle: '生成一条深度预测（约 15–30 秒，可取消）',
   deepLoading: '深度预测正在推演下一步…', autoExpert: '每轮自动生成深度预测建议',
-  deepStage1: '正在找方向', deepStage2: '正在校核因果', deepStage3: '还在跑，可取消',
+  deepWaiting: '仍在处理，可取消', reviewPending: '校核超时：这张卡尚未完成推理校核，请自行判断后采用。',
   card: '深度预测', ace: '深度预测',
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
   salvaged: '模型没按结构化格式返回，已把原文放进卡片',
@@ -45,7 +45,7 @@ const en = {
   button: '✦ ACE', buttonTitle: 'Generate one ACE Move (Tab accepts it)',
   deep: 'ACE', deepTitle: 'Generate one ACE Move (about 15–30 seconds, cancelable)',
   deepLoading: 'ACE is reasoning about the next move…', autoExpert: 'Generate one ACE suggestion every turn',
-  deepStage1: 'Finding directions', deepStage2: 'Checking the reasoning', deepStage3: 'Still running, cancelable',
+  deepWaiting: 'Still processing, cancelable', reviewPending: 'Review timed out: this card has not completed reasoning review. Assess it before accepting.',
   card: 'ACE Move', ace: 'ACE',
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
   salvaged: 'The model did not return structured JSON; its raw answer is in the card',
@@ -131,7 +131,7 @@ function readSettings() {
 
 function createStore() {
   let state = {
-    status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', salvaged: false, warning: '', startedAt: 0,
+    status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', salvaged: false, warning: '', startedAt: 0, durationMs: 0,
     turnSeq: -1, triggeredTurnSeq: -1, accepted: null,
   }
   const listeners = new Set()
@@ -149,7 +149,7 @@ function createStore() {
 }
 
 const EMPTY_STATE = Object.freeze({
-  status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', salvaged: false, warning: '', startedAt: 0,
+  status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', salvaged: false, warning: '', startedAt: 0, durationMs: 0,
   turnSeq: -1, triggeredTurnSeq: -1, accepted: null,
 })
 const EMPTY_STORE = { get: () => EMPTY_STATE, subscribe: () => () => {} }
@@ -464,6 +464,8 @@ function apply(ctx) {
           warning: typeof payload.value?.warning === 'string' ? payload.value.warning : '',
           turnSeq: end ? end.seq : store.get().turnSeq,
           triggeredTurnSeq: end ? end.seq : store.get().triggeredTurnSeq,
+          // Frozen at arrival: the stamp shows how long this card took.
+          durationMs: Math.max(0, Date.now() - (store.get().startedAt || Date.now())),
           error: '',
         })
       } catch (error) {
@@ -498,6 +500,7 @@ function apply(ctx) {
     '.dcp-head{display:flex;align-items:center;gap:8px;min-height:26px;margin-bottom:4px}',
     '.dcp-title{font-size:var(--dsh-fs-x,12px);letter-spacing:.02em;opacity:.68;white-space:nowrap}',
     '.dcp-loading{font-size:var(--dsh-fs-meta,13px);opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.dcp-stamp{margin-top:2px;text-align:right;font-size:var(--dsh-fs-x,12px);letter-spacing:.02em;opacity:.4;user-select:text;cursor:text}',
     '.dcp-spacer{flex:1}',
     '.dcp-icon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:var(--dsh-fs-meta,13px);line-height:1;cursor:pointer;opacity:.65}',
     '.dcp-icon:hover,.dcp-icon:focus-visible{background:var(--dsw-specific-bubble,#ffffff12);opacity:1}',
@@ -559,8 +562,8 @@ function apply(ctx) {
     const input = useInput(snapshot => snapshot)
     const session = useSession(snapshot => snapshot)
     const [settingsOpen, setSettingsOpen] = useState(false)
-    // A card takes 15-25s. A frozen sentence reads as a hang; the seconds and
-    // the stage tell the user it is still working and that closing is safe.
+    // Only elapsed time is known before the response. Do not infer a backend
+    // stage from a timer; the generation may still be running after 6 seconds.
     const [, tick] = useState(0)
     useEffect(() => {
       if (state.status !== 'loading') return undefined
@@ -568,7 +571,7 @@ function apply(ctx) {
       return () => clearInterval(timer)
     }, [state.status])
     const elapsed = state.startedAt ? Math.max(0, Math.round((Date.now() - state.startedAt) / 1000)) : 0
-    const stage = elapsed < 6 ? t('deepStage1') : elapsed < 16 ? t('deepStage2') : t('deepStage3')
+    const stage = t('deepWaiting')
 
     // Keep --dsh-ace-inset-left/right equal to the live composer card edges.
     // This dock is not the Todo/Goal slot, so no CSS math is assumed: measure, then set.
@@ -1266,11 +1269,18 @@ function apply(ctx) {
           type: 'button', className: 'dcp-icon', title: t('retry'), 'aria-label': t('retry'), onClick: refresh,
         }, '↻'))
       : null,
-    state.warning && (state.mode === 'fast-fallback' || state.salvaged)
-      ? React.createElement('div', { className: 'dcp-warning' },
-        `${state.salvaged ? t('salvaged') : t('fallback')}：${state.warning}`)
+    state.warning
+      ? React.createElement('div', { className: 'dcp-warning', role: 'status' },
+        state.mode === 'expert' && state.warning.startsWith('ACE review timed out;')
+          ? t('reviewPending')
+          : `${state.salvaged ? t('salvaged') : state.mode === 'fast-fallback' ? t('fallback') : t('error')}：${state.warning}`)
       : null,
     rows,
+    // Version + elapsed stay on the card, so a screenshot reports both.
+    state.status === 'ready' && state.durationMs > 0
+      ? React.createElement('div', { className: 'dcp-stamp' },
+        `ACE ${ACE_VERSION} · ${(state.durationMs / 1000).toFixed(1)}s`)
+      : null,
     state.accepted !== null
       ? React.createElement('div', { className: 'dcp-undo' },
         React.createElement('span', null, t('inserted')),
