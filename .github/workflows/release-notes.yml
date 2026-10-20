@@ -16,9 +16,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
       TAG: v0.5.23
       MARKER: If a release breaks the composer
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - name: Append the recovery note when it is missing
         run: |
           gh release view "$TAG" --json body -q .body > /tmp/notes.md
