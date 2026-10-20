@@ -36,6 +36,8 @@ Most next-message tools optimize for **what you would probably type**. ACE optim
 
 > You just said X → the line behind it is Y → so Z will behave the same way → try W first; if you see such-and-such, I was wrong
 
+By default the card shows only **W**, the line you can send. X/Y/Z, the three plain lines and "wrong if" sit behind **Show details** in the footer: the card answers "send it or not" first, and "why" on request.
+
 - **X** restates the concrete thing in your own words (usually the assistant line you are answering).
 - **Y** states the relation in one human sentence: why it works or fails. At most one abstraction.
 - **Z** gives one other place the same relation shows up. If it does not look alike on the surface, the card carries a separate line saying how it maps; if it cannot, this beat scores zero.

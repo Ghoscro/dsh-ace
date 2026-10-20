@@ -1166,16 +1166,17 @@ function apply(ctx) {
       },
       React.createElement('span', { className: 'dcp-key' }, index === 0 ? 'Tab' : `Alt+${index + 1}`),
       React.createElement('span', { className: 'dcp-body' },
-        x ? React.createElement('span', { className: 'dcp-x' },
+        // One line by default: W, the sentence the user can send. Everything
+        // else - X, the three plain lines, Y, Z, the falsifier, evidence - is
+        // one click away under "显示详情".
+        more && x ? React.createElement('span', { className: 'dcp-x' },
           React.createElement('span', { className: 'dcp-beat' }, t('beatX')), x) : null,
-        now ? React.createElement('span', { className: 'dcp-plain' },
+        more && now ? React.createElement('span', { className: 'dcp-plain' },
           React.createElement('span', { className: 'dcp-beat' }, t('now')), now) : null,
-        goal ? React.createElement('span', { className: 'dcp-plain' },
+        more && goal ? React.createElement('span', { className: 'dcp-plain' },
           React.createElement('span', { className: 'dcp-beat' }, t('goal')), goal) : null,
-        outcome ? React.createElement('span', { className: 'dcp-plain' },
+        more && outcome ? React.createElement('span', { className: 'dcp-plain' },
           React.createElement('span', { className: 'dcp-beat' }, t('outcome')), outcome) : null,
-        // Only the white lines stay: X, the three plain lines and W. Everything
-        // grey (Y, Z, the falsifier, evidence) is one click away.
         more && fact && factSource ? React.createElement('span', { className: 'dcp-fact' },
           React.createElement('span', { className: 'dcp-beat' }, t('fact')), fact,
           React.createElement('span', { className: 'dcp-meta' }, t('factSource') + factSource),

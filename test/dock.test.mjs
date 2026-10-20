@@ -73,7 +73,7 @@ for (const reviewTimedOut of [false, true]) test(`dock renders ${reviewTimedOut 
             value: {
               mode: 'expert',
               candidates: [
-                { text: '跑一遍测试', why: '先确认范围，避免重试掩盖问题', evidence: 'x.test.ts', risk: '', slot: 'recommended', fact: '用户报告重试后通过', fact_source: '最后用户消息', fact_quote: '重试后通过', alternative: '也可能是时序噪声', supports: '关闭重试后失败率上升会增加可信度', unresolved: '仍不能排除调度差异', hypothesis: '先确认范围：重试可能掩盖竞态', verification: '对照开启和关闭重试的同一用例', z: '像补货暂时掩盖库存损耗', falsify: '关闭重试仍稳定通过则削弱掩盖假设' },
+                { text: '跑一遍测试', why: '先确认范围，避免重试掩盖问题', evidence: 'x.test.ts', risk: '', slot: 'recommended', x: '助手问要不要跑全量', now: '测试偶发失败', goal: '确认是不是重试掩盖了问题', outcome: '看到去掉重试后是否仍失败', fact: '用户报告重试后通过', fact_source: '最后用户消息', fact_quote: '重试后通过', alternative: '也可能是时序噪声', supports: '关闭重试后失败率上升会增加可信度', unresolved: '仍不能排除调度差异', hypothesis: '先确认范围：重试可能掩盖竞态', verification: '对照开启和关闭重试的同一用例', z: '像补货暂时掩盖库存损耗', falsify: '关闭重试仍稳定通过则削弱掩盖假设' },
                 { text: '先看 diff', why: '确认改动没有扩大', evidence: 'git diff', risk: '', slot: 'quick' },
                 { text: '别加重试', why: '重试会把竞态盖住', evidence: '', risk: '可能暴露更多失败', slot: 'non_obvious' },
                 { text: '顺手改 CI', why: '把同类问题一次收掉', evidence: 'ci.yml', risk: '', slot: 'risk' },
@@ -161,8 +161,10 @@ for (const reviewTimedOut of [false, true]) test(`dock renders ${reviewTimedOut 
   assert.equal(!!container.querySelector('.dcp-warning'), reviewTimedOut)
   if (reviewTimedOut) assert.match(container.querySelector('.dcp-warning').textContent, /reviewPending/)
   assert.match(container.textContent, /跑一遍测试/)
-  // A card is a next move, not a report. Only the white lines stay: X, the
-  // three plain lines and W. Everything grey is one click away.
+  // A card is one sendable line by default. X, the three plain lines and all
+  // reasoning detail wait behind the toggle.
+  assert.equal(container.querySelector('.dcp-x'), null)
+  assert.equal(container.querySelector('.dcp-plain'), null)
   assert.equal(container.querySelector('.dcp-fact'), null)
   assert.equal(container.querySelector('.dcp-hypothesis'), null)
   assert.equal(container.querySelector('.dcp-alternative'), null)
@@ -176,6 +178,8 @@ for (const reviewTimedOut of [false, true]) test(`dock renders ${reviewTimedOut 
   assert.equal(toggle.getAttribute('aria-expanded'), 'false')
   await act(async () => { toggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
   assert.equal(container.querySelector('.dcp-detail-toggle').getAttribute('aria-expanded'), 'true')
+  assert.match(container.querySelector('.dcp-x').textContent, /助手问要不要跑全量/)
+  assert.match(container.querySelector('.dcp-plain').textContent, /测试偶发失败/)
   assert.match(container.querySelector('.dcp-why').textContent, /先确认范围/)
   assert.match(container.querySelector('.dcp-fact').textContent, /用户报告重试后通过.*最后用户消息/)
   assert.match(container.querySelector('.dcp-fact').textContent, /quote重试后通过/)

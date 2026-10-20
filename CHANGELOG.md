@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fold the card down to W: only the sendable line shows by default. X, the
+  three plain lines, Y, Z, the falsifier, evidence and the reasoning detail sit
+  behind "显示详情 / Show details". The footer carries the toggle and the build
+  stamp (`ACE 0.5.24 · 13.2s`).
 - Show review-timeout warnings on ordinary expert cards as well as recovered
   cards; localize the warning and keep Tab draft-only.
 - Show elapsed time with a neutral waiting message. The response API does not
