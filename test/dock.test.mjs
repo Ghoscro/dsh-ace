@@ -180,6 +180,13 @@ for (const reviewTimedOut of [false, true]) test(`dock renders ${reviewTimedOut 
   assert.equal(container.querySelector('.dcp-detail-toggle').getAttribute('aria-expanded'), 'true')
   assert.match(container.querySelector('.dcp-x').textContent, /助手问要不要跑全量/)
   assert.match(container.querySelector('.dcp-plain').textContent, /测试偶发失败/)
+  // Reading order when folded open: the sendable line, then "wrong if", then
+  // what it was answering, and the grey reasoning last.
+  const bodyOrder = [...container.querySelectorAll('.dcp-body > span')].map(span => span.className)
+  assert.ok(bodyOrder[0].includes('dcp-text'), 'the sendable line stays first')
+  assert.ok(bodyOrder[1].includes('dcp-falsify'), 'wrong-if opens the detail')
+  assert.ok(bodyOrder.findIndex(name => name.includes('dcp-x')) > 1, 'X follows the falsifier')
+  assert.ok(bodyOrder.findIndex(name => name.includes('dcp-fact')) > bodyOrder.findIndex(name => name.includes('dcp-x')))
   assert.match(container.querySelector('.dcp-why').textContent, /先确认范围/)
   assert.match(container.querySelector('.dcp-fact').textContent, /用户报告重试后通过.*最后用户消息/)
   assert.match(container.querySelector('.dcp-fact').textContent, /quote重试后通过/)

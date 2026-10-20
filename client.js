@@ -525,6 +525,9 @@ function apply(ctx) {
     '.dcp-rel{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.72;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-beat{font-weight:700;opacity:.82;margin-right:2px}',
     '.dcp-meta{font-size:var(--dsh-fs-meta,13px);line-height:1.4;opacity:.52;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}',
+    // "Wrong if" opens the folded view, so it reads one step brighter than the
+    // surrounding evidence.
+    '.dcp-falsify{opacity:.78;margin-bottom:2px}',
     '.dcp-warning{font-size:var(--dsh-fs-meta,13px);line-height:1.4;color:#b8860b;margin:3px 6px 0}',
     '.dcp-skeleton{height:12px;margin:7px 6px;border-radius:6px;background:linear-gradient(90deg,var(--dsw-specific-bubble,#ffffff0c),#ffffff18,var(--dsw-specific-bubble,#ffffff0c));background-size:200% 100%;animation:dcp-shimmer 1.4s linear infinite}',
     '.dcp-skeleton:nth-child(2){width:82%}.dcp-skeleton:nth-child(3){width:66%}',
@@ -1166,9 +1169,12 @@ function apply(ctx) {
       },
       React.createElement('span', { className: 'dcp-key' }, index === 0 ? 'Tab' : `Alt+${index + 1}`),
       React.createElement('span', { className: 'dcp-body' },
-        // One line by default: W, the sentence the user can send. Everything
-        // else - X, the three plain lines, Y, Z, the falsifier, evidence - is
-        // one click away under "显示详情".
+        // The sendable line stays first at every size. Expanding appends the
+        // evidence underneath it, in the order a person checks a claim:
+        // "how would I know this is wrong" first, then what it was answering
+        // and what I wanted, and only then the grey reasoning.
+        React.createElement('span', { className: 'dcp-text' }, text),
+        more && falsifyLine ? React.createElement('span', { className: 'dcp-meta dcp-falsify' }, falsifyLine) : null,
         more && x ? React.createElement('span', { className: 'dcp-x' },
           React.createElement('span', { className: 'dcp-beat' }, t('beatX')), x) : null,
         more && now ? React.createElement('span', { className: 'dcp-plain' },
@@ -1177,10 +1183,6 @@ function apply(ctx) {
           React.createElement('span', { className: 'dcp-beat' }, t('goal')), goal) : null,
         more && outcome ? React.createElement('span', { className: 'dcp-plain' },
           React.createElement('span', { className: 'dcp-beat' }, t('outcome')), outcome) : null,
-        more && fact && factSource ? React.createElement('span', { className: 'dcp-fact' },
-          React.createElement('span', { className: 'dcp-beat' }, t('fact')), fact,
-          React.createElement('span', { className: 'dcp-meta' }, t('factSource') + factSource),
-          factQuote ? React.createElement('span', { className: 'dcp-meta' }, t('quote') + factQuote) : null) : null,
         line && more ? React.createElement('span', { className: 'dcp-why' },
           React.createElement('span', { className: 'dcp-beat' }, t(hypothesis ? 'mechanism' : 'hypothesis')), line) : null,
         more && hypothesis ? React.createElement('span', { className: 'dcp-hypothesis' },
@@ -1194,8 +1196,10 @@ function apply(ctx) {
           React.createElement('span', { className: 'dcp-beat' }, t('verification')), verification) : null,
         more && supports ? React.createElement('span', { className: 'dcp-supports' }, t('supports'), supports) : null,
         more && unresolved ? React.createElement('span', { className: 'dcp-unresolved' }, t('unresolved'), unresolved) : null,
-        React.createElement('span', { className: 'dcp-text' }, text),
-        more && falsifyLine ? React.createElement('span', { className: 'dcp-meta' }, falsifyLine) : null,
+        more && fact && factSource ? React.createElement('span', { className: 'dcp-fact' },
+          React.createElement('span', { className: 'dcp-beat' }, t('fact')), fact,
+          React.createElement('span', { className: 'dcp-meta' }, t('factSource') + factSource),
+          factQuote ? React.createElement('span', { className: 'dcp-meta' }, t('quote') + factQuote) : null) : null,
         more && riskLine ? React.createElement('span', { className: 'dcp-meta' }, riskLine) : null))
     })
 
