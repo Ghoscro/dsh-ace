@@ -2217,7 +2217,7 @@ async function callExpertStage(ctx, route, prompt, config, timeoutMs, maxTokens,
 /**
  * Run the expert pipeline: deterministic situation, generation (one retry),
  * selection and reasoning review. Content failures return no expert card;
- * review timeouts retain the candidate with an explicit warning.
+ * review timeouts silently retain the candidate as generated.
  * @param {import('@deepseek-ai/cordis').Context} ctx - host context.
  * @param {ReturnType<typeof normalizeConfig>} config - plugin config.
  * @param {{ transcript: object[], cwd?: string, count: number, locale?: string }} input - request data.
@@ -2467,7 +2467,6 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   // Every shown expert card, including recovered prose, passes this seam.
   let reviewPromptChars = 0
   let reviewMs = 0
-  let warning = ''
   if (best) {
     const reviewStarted = Date.now()
     const reviewContext = { transcript: sourceTranscript, evidence, locale: input.locale ?? 'zh-CN' }
@@ -2496,13 +2495,13 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     } catch (error) {
       if (signal.aborted) throw abortError(signal, 'claim review aborted')
       const message = String(error?.message ?? error)
-      // A slow provider is not a false claim. Content rejections still drop the
-      // card; a timeout shows the unreviewed card with a visible warning, so a
-      // 12s stall never costs the user the whole wait.
+      // A slow provider is not a false claim, and a card that arrived inside the
+      // budget is worth showing as-is. Content rejections still drop the card;
+      // a timeout keeps whatever the review stage managed to produce and says
+      // nothing about it on the card.
       if (!/timed out|timeout/i.test(message)) throw error
       logPredictionEvent({ status: 'review-timeout', sessionId: input.sessionId, message: message.slice(0, 200) })
       best = { ...best, claimReviewed: false }
-      warning = 'ACE review timed out; this card is shown without the reasoning review.'
     } finally {
       reviewMs = Date.now() - reviewStarted
     }
@@ -2537,7 +2536,6 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     evidenceUsed: evidence !== '(none)' && evidence !== '(not a git repository or no changes)',
     usage: result.usage,
     promptChars: (movesPrompt.system ?? '').length + (movesPrompt.user ?? '').length + reviewPromptChars,
-    warning: warning || undefined,
     timings: { movesMs, reviewMs, totalMs: Date.now() - startedAt },
   }
 }

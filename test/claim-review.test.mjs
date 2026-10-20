@@ -92,7 +92,7 @@ test('a quote that is not in the sources at all is still rejected', () => {
   assert.throws(() => parseClaimReview(encode({ fact_quote: '27 张卡全部于 12 点入库' }), { transcript }), /quote/)
 })
 
-test('a stalled review returns an explicitly unreviewed expert card', async () => {
+test('a stalled review keeps the card without saying anything about it', async () => {
   const { ctx } = context(encode({}))
   const stream = ctx.llm.stream
   ctx.llm.stream = options => options.system.includes(CLAIM_REVIEW_MARKER)
@@ -103,7 +103,7 @@ test('a stalled review returns an explicitly unreviewed expert card', async () =
   assert.equal(result.salvaged, false)
   assert.equal(result.candidates.length, 1)
   assert.equal(result.candidates[0].claimReviewed, false)
-  assert.match(result.warning, /review timed out/)
+  assert.equal(result.warning, undefined)
   assert.ok(result.timings.reviewMs >= 10)
 })
 

@@ -26,7 +26,7 @@ const zh = {
   button: '深度预测', buttonTitle: '生成一条深度预测（Tab 采用）',
   deep: '深度预测', deepTitle: '生成一条深度预测（约 15–30 秒，可取消）',
   deepLoading: '深度预测正在推演下一步…', autoExpert: '每轮自动生成深度预测建议',
-  deepWaiting: '仍在处理，可取消', reviewPending: '校核超时：这张卡尚未完成推理校核，请自行判断后采用。',
+  deepWaiting: '仍在处理，可取消',
   showDetails: '显示详情', hideDetails: '收起详情',
   card: '深度预测', ace: '深度预测',
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
@@ -46,7 +46,7 @@ const en = {
   button: '✦ ACE', buttonTitle: 'Generate one ACE Move (Tab accepts it)',
   deep: 'ACE', deepTitle: 'Generate one ACE Move (about 15–30 seconds, cancelable)',
   deepLoading: 'ACE is reasoning about the next move…', autoExpert: 'Generate one ACE suggestion every turn',
-  deepWaiting: 'Still processing, cancelable', reviewPending: 'Review timed out: this card has not completed reasoning review. Assess it before accepting.',
+  deepWaiting: 'Still processing, cancelable',
   showDetails: 'Show details', hideDetails: 'Hide details',
   card: 'ACE Move', ace: 'ACE',
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
@@ -1285,9 +1285,7 @@ function apply(ctx) {
       : null,
     state.warning
       ? React.createElement('div', { className: 'dcp-warning', role: 'status' },
-        state.mode === 'expert' && state.warning.startsWith('ACE review timed out;')
-          ? t('reviewPending')
-          : `${state.salvaged ? t('salvaged') : state.mode === 'fast-fallback' ? t('fallback') : t('error')}：${state.warning}`)
+        `${state.salvaged ? t('salvaged') : state.mode === 'fast-fallback' ? t('fallback') : t('error')}：${state.warning}`)
       : null,
     rows,
     // Footer: the reasoning detail is folded by default, version stays visible.

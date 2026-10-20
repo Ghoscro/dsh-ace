@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Drop the review-timeout warning. A card whose reasoning review ran out of
+  budget is shown exactly as generated, with no line calling attention to what
+  did not finish; content rejections still drop the card. The `reviewPending`
+  strings and the client branch reading them are gone with it.
 - Fold the card down to W: only the sendable line shows by default. Everything
   else sits behind "显示详情 / Show details" and reads in checking order:
   "wrong if" first, then X and the three plain lines, then the grey reasoning

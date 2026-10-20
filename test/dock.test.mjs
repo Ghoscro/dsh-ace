@@ -21,7 +21,7 @@ function event(type, seq, data) {
   return { type: 'event', event: { type, seq, data } }
 }
 
-for (const reviewTimedOut of [false, true]) test(`dock renders ${reviewTimedOut ? 'unreviewed warning' : 'reviewed card'} and Tab fills only the draft`, async () => {
+for (const fallbackWarning of [false, true]) test(`dock renders ${fallbackWarning ? 'the fallback warning' : 'reviewed card'} and Tab fills only the draft`, async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', { url: 'http://localhost/' })
   const window = dom.window
   const document = window.document
@@ -79,7 +79,7 @@ for (const reviewTimedOut of [false, true]) test(`dock renders ${reviewTimedOut 
                 { text: '顺手改 CI', why: '把同类问题一次收掉', evidence: 'ci.yml', risk: '', slot: 'risk' },
               ],
               model: 'fake',
-              warning: reviewTimedOut ? 'ACE review timed out; this card is shown without the reasoning review.' : undefined,
+              warning: fallbackWarning ? 'ACE reasoning review could not complete: expert stage timed out' : undefined,
               salvaged: false,
             },
           }
@@ -158,8 +158,8 @@ for (const reviewTimedOut of [false, true]) test(`dock renders ${reviewTimedOut 
 
   const rows = [...container.querySelectorAll('.dcp-row')]
   assert.equal(rows.length, 1)
-  assert.equal(!!container.querySelector('.dcp-warning'), reviewTimedOut)
-  if (reviewTimedOut) assert.match(container.querySelector('.dcp-warning').textContent, /reviewPending/)
+  assert.equal(!!container.querySelector('.dcp-warning'), fallbackWarning)
+  if (fallbackWarning) assert.match(container.querySelector('.dcp-warning').textContent, /ACE reasoning review could not complete/)
   assert.match(container.textContent, /跑一遍测试/)
   // A card is one sendable line by default. X, the three plain lines and all
   // reasoning detail wait behind the toggle.
