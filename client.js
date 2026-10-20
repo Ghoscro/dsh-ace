@@ -515,19 +515,21 @@ function apply(ctx) {
     '.dcp-key{flex:none;min-width:42px;padding:0 5px;margin-top:2px;border:1px solid var(--dsw-alias-border-primary,rgba(127,127,127,.32));border-radius:4px;font-size:var(--dsh-fs-x,12px);line-height:1.6;text-align:center;opacity:.6}',
     '.dcp-body{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}',
     '.dcp-text{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:normal;overflow-wrap:anywhere;font-size:var(--dsh-fs-w,15px);line-height:1.5}',
-    '.dcp-why{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.66;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
-    '.dcp-x{font-size:var(--dsh-fs-meta,13px);line-height:1.4;opacity:.6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-why{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-x{font-size:var(--dsh-fs-meta,13px);line-height:1.4;opacity:.8;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-plain{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.8;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-ghost{position:fixed;pointer-events:none;z-index:60;box-sizing:border-box;white-space:pre-wrap;overflow:hidden;color:var(--dsw-alias-label-tertiary,#9aa0a6);opacity:.7}',
     '.dcp-ghost-hint{font-size:var(--dcp-hint-size,9px);line-height:1;color:#fff;opacity:.55;letter-spacing:.06em}',
     '.dcp-trace{position:fixed;z-index:61;pointer-events:none;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dsw-alias-label-tertiary,#9aa0a6);opacity:.8;white-space:pre}',
-    '.dcp-z{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.64;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
-    '.dcp-rel{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.72;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-z{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.46;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
+    '.dcp-rel{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-beat{font-weight:700;opacity:.82;margin-right:2px}',
-    '.dcp-meta{font-size:var(--dsh-fs-meta,13px);line-height:1.4;opacity:.52;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}',
-    // "Wrong if" opens the folded view, so it reads one step brighter than the
-    // surrounding evidence.
-    '.dcp-falsify{opacity:.78;margin-bottom:2px}',
+    '.dcp-meta{font-size:var(--dsh-fs-meta,13px);line-height:1.4;opacity:.46;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}',
+    // Two brightness tiers in the folded view: "wrong if" and X are what the
+    // user checks first; the reasoning and evidence below them stay one step
+    // dimmer so the card never reads as one flat grey block.
+    '.dcp-falsify{opacity:.8;margin-bottom:2px}',
+    '.dcp-hypothesis,.dcp-alternative,.dcp-verification,.dcp-supports,.dcp-unresolved,.dcp-fact{font-size:var(--dsh-fs-meta,13px);line-height:1.45;opacity:.46;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
     '.dcp-warning{font-size:var(--dsh-fs-meta,13px);line-height:1.4;color:#b8860b;margin:3px 6px 0}',
     '.dcp-skeleton{height:12px;margin:7px 6px;border-radius:6px;background:linear-gradient(90deg,var(--dsw-specific-bubble,#ffffff0c),#ffffff18,var(--dsw-specific-bubble,#ffffff0c));background-size:200% 100%;animation:dcp-shimmer 1.4s linear infinite}',
     '.dcp-skeleton:nth-child(2){width:82%}.dcp-skeleton:nth-child(3){width:66%}',
