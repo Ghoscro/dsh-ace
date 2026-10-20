@@ -11,7 +11,7 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.22'
+const ACE_VERSION = '0.5.23'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')

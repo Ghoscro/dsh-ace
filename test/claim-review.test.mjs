@@ -71,3 +71,23 @@ test('cancellation during review aborts without a fallback',async()=>{
  const {ctx}=context(encode({}),controller)
  await assert.rejects(generatePrediction(ctx,config,input,controller.signal),/cancel review/)
 })
+
+test('a faithful quote survives whitespace differences and a trailing gloss', () => {
+  const spaced = parseClaimReview(encode({ fact_quote: '过滤后仍有 27 张卡' }), { transcript })
+  assert.equal(spaced.fact_quote, '过滤后仍有 27 张卡')
+
+  const glossed = parseClaimReview(encode({ fact_quote: '过滤后仍有27张卡，来源还没查。我补充一句' }), { transcript })
+  assert.match(glossed.fact_quote, /^过滤后仍有27张卡/)
+  assert.doesNotMatch(glossed.fact_quote, /我补充一句/)
+})
+
+test('an oversized field is clipped instead of rejecting the whole card', () => {
+  const long = parseClaimReview(encode({ why: '因为'.repeat(400) }), { transcript })
+  assert.equal(long.why.length, 600)
+  const longText = parseClaimReview(encode({ text: '做'.repeat(1500) }), { transcript })
+  assert.equal(longText.text.length, 1200)
+})
+
+test('a quote that is not in the sources at all is still rejected', () => {
+  assert.throws(() => parseClaimReview(encode({ fact_quote: '27 张卡全部于 12 点入库' }), { transcript }), /quote/)
+})

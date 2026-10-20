@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.23 — 2026-10-20
+
+- The claim review no longer rejects a sound card over formatting: an oversized
+  field is clipped, and a faithful quote that differs in whitespace or carries a
+  trailing gloss is repaired to the excerpt that really exists in the sources.
+  A quote that is absent from the sources is still rejected.
+- `fact_quote` is now asked to be a single line under 120 characters, with no
+  gloss appended.
+
 ## 0.5.22 — 2026-10-19
 
 - Review every selected expert card, including recovered prose, before display; preserve its creative mechanism while repairing causal jumps across all visible fields.

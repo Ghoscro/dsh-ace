@@ -8,12 +8,12 @@
 
 ## 1. Release tarball (recommended)
 
-1. Download `ghoscro-dsh-ace-0.5.22.tgz` from the repository's releases page.
+1. Download `ghoscro-dsh-ace-0.5.23.tgz` from the repository's releases page.
 2. Close DSH.
 3. In the profile directory (`<DSH_HOME>/profiles/<name>`):
 
    ```bash
-   pnpm add file:/absolute/path/to/ghoscro-dsh-ace-0.5.22.tgz
+   pnpm add file:/absolute/path/to/ghoscro-dsh-ace-0.5.23.tgz
    ```
 
 4. Add `"@ghoscro/dsh-ace"` to `dsh.profile.bundles` in the profile `package.json`.
@@ -49,7 +49,7 @@ Do not add both `dsh-composer-predict` and `@ghoscro/dsh-ace` to the bundle list
 
 ```bash
 npm pack
-tar -tf ghoscro-dsh-ace-0.5.22.tgz
+tar -tf ghoscro-dsh-ace-0.5.23.tgz
 ```
 
 The tarball contains only the explicit `files` list. Inspect it before sharing: it must not contain sessions, diagnostics, credentials, profile files, backups, or internal documents.
