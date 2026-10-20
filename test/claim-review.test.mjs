@@ -91,3 +91,32 @@ test('an oversized field is clipped instead of rejecting the whole card', () => 
 test('a quote that is not in the sources at all is still rejected', () => {
   assert.throws(() => parseClaimReview(encode({ fact_quote: '27 张卡全部于 12 点入库' }), { transcript }), /quote/)
 })
+
+test('a stalled review returns an explicitly unreviewed expert card', async () => {
+  const { ctx } = context(encode({}))
+  const stream = ctx.llm.stream
+  ctx.llm.stream = options => options.system.includes(CLAIM_REVIEW_MARKER)
+    ? { [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }) }
+    : stream(options)
+  const result = await generatePrediction(ctx, { ...config, expertReviewTimeoutMs: 20 }, input, new AbortController().signal)
+  assert.equal(result.mode, 'expert')
+  assert.equal(result.salvaged, false)
+  assert.equal(result.candidates.length, 1)
+  assert.equal(result.candidates[0].claimReviewed, false)
+  assert.match(result.warning, /review timed out/)
+  assert.ok(result.timings.reviewMs >= 10)
+})
+
+test('generation timing includes a stalled first attempt before recovery', async () => {
+  const { ctx } = context(encode({}))
+  const stream = ctx.llm.stream
+  let calls = 0
+  ctx.llm.stream = options => ++calls === 1
+    ? { [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }) }
+    : stream(options)
+  const result = await generatePrediction(ctx, { ...config, expertMovesTimeoutMs: 40 }, input, new AbortController().signal)
+  assert.equal(calls, 3)
+  assert.equal(result.candidates[0].claimReviewed, true)
+  assert.ok(result.timings.movesMs >= 25, `failed attempt missing: ${result.timings.movesMs}ms`)
+  assert.ok(result.timings.totalMs >= result.timings.movesMs)
+})

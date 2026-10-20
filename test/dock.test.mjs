@@ -21,7 +21,7 @@ function event(type, seq, data) {
   return { type: 'event', event: { type, seq, data } }
 }
 
-test('dock predicts after a new turn and Tab fills the first candidate', async () => {
+for (const reviewTimedOut of [false, true]) test(`dock renders ${reviewTimedOut ? 'unreviewed warning' : 'reviewed card'} and Tab fills only the draft`, async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', { url: 'http://localhost/' })
   const window = dom.window
   const document = window.document
@@ -47,6 +47,8 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
   window.cancelAnimationFrame = id => window.clearTimeout(id)
   window.__ModuleLoader__ = { load(entry) { captured = entry } }
   const fetchCalls = []
+  let releasePrediction
+  const predictionReady = new Promise(resolve => { releasePrediction = resolve })
   const context = {
     window, document,
     navigator: window.navigator,
@@ -65,6 +67,7 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
       return {
         status: 200,
         async json() {
+          await predictionReady
           return {
             ok: true,
             value: {
@@ -76,12 +79,16 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
                 { text: '顺手改 CI', why: '把同类问题一次收掉', evidence: 'ci.yml', risk: '', slot: 'risk' },
               ],
               model: 'fake',
+              warning: reviewTimedOut ? 'ACE review timed out; this card is shown without the reasoning review.' : undefined,
+              salvaged: false,
             },
           }
         },
       }
     },
     setTimeout: window.setTimeout.bind(window),
+    setInterval: window.setInterval.bind(window),
+    clearInterval: window.clearInterval.bind(window),
     TextDecoder,
     clearTimeout: window.clearTimeout.bind(window),
     requestAnimationFrame: callback => window.setTimeout(() => callback(0), 0),
@@ -144,12 +151,32 @@ test('dock predicts after a new turn and Tab fills the first candidate', async (
     for (const listener of [...listeners]) listener()
   })
   await act(async () => { await sleep(700) })
+  assert.match(container.querySelector('.dcp-loading').textContent, /deepWaiting \d+s/)
+  assert.doesNotMatch(container.textContent, /deepStage[123]/)
+  await act(async () => { releasePrediction() })
   await act(async () => { await sleep(100) })
 
   const rows = [...container.querySelectorAll('.dcp-row')]
   assert.equal(rows.length, 1)
+  assert.equal(!!container.querySelector('.dcp-warning'), reviewTimedOut)
+  if (reviewTimedOut) assert.match(container.querySelector('.dcp-warning').textContent, /reviewPending/)
   assert.match(container.textContent, /跑一遍测试/)
-  assert.match(container.textContent, /先确认范围/)
+  // A card is a next move, not a report. Only the white lines stay: X, the
+  // three plain lines and W. Everything grey is one click away.
+  assert.equal(container.querySelector('.dcp-fact'), null)
+  assert.equal(container.querySelector('.dcp-hypothesis'), null)
+  assert.equal(container.querySelector('.dcp-alternative'), null)
+  assert.equal(container.querySelector('.dcp-supports'), null)
+  assert.equal(container.querySelector('.dcp-unresolved'), null)
+  assert.equal(container.querySelector('.dcp-why'), null)
+  assert.equal(container.querySelector('.dcp-z'), null)
+  assert.doesNotMatch(container.textContent, /先确认范围/)
+  assert.match(container.querySelector('.dcp-stamp').textContent, /ACE \d+\.\d+\.\d+ · \d+\.\d+s/)
+  const toggle = container.querySelector('.dcp-detail-toggle')
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false')
+  await act(async () => { toggle.dispatchEvent(new window.MouseEvent('click', { bubbles: true })) })
+  assert.equal(container.querySelector('.dcp-detail-toggle').getAttribute('aria-expanded'), 'true')
+  assert.match(container.querySelector('.dcp-why').textContent, /先确认范围/)
   assert.match(container.querySelector('.dcp-fact').textContent, /用户报告重试后通过.*最后用户消息/)
   assert.match(container.querySelector('.dcp-fact').textContent, /quote重试后通过/)
   assert.match(container.querySelector('.dcp-alternative').textContent, /时序噪声/)

@@ -54,6 +54,15 @@ tar -tf ghoscro-dsh-ace-0.5.23.tgz
 
 The tarball contains only the explicit `files` list. Inspect it before sharing: it must not contain sessions, diagnostics, credentials, profile files, backups, or internal documents.
 
+## Updating an existing installation
+
+A restart loads the package already installed in the profile; it does not
+download a new release. Download the target release tarball, close DSH, repeat
+the profile install/materialization steps above, then restart. Check the
+package version, `/composer-predict/health`, and `<html data-ace-version>` agree.
+The install examples target the published 0.5.23 release; source on `main` may
+be newer. Unreleased changes in the changelog are not an installed update.
+
 ## Where the button is
 
 - `✦ ACE` sits in the composer input row.

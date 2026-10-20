@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Show review-timeout warnings on ordinary expert cards as well as recovered
+  cards; localize the warning and keep Tab draft-only.
+- Show elapsed time with a neutral waiting message. The response API does not
+  stream backend stages, so elapsed seconds must not claim review has started.
+- Include failed generation attempts in `timings.movesMs`.
+- Correct token budgets and local-retention documentation; add a reproducible
+  [trial and latency report](docs/trial-feedback.md) and release checklist.
+- Regression coverage uses simulated model stalls and React/JSDOM. These checks
+  do not establish live-provider latency or human-rated creative quality.
+
 ## 0.5.24 — 2026-10-20
 
 - Latency: three candidates instead of five, a smaller output schema (no
@@ -10,8 +22,8 @@
   output 6000 → 2400 tokens. The worst case no longer runs for minutes.
 - A review timeout now shows the card with a visible warning instead of dropping
   it after the wait. Content rejections still drop the card.
-- The dock shows elapsed seconds and the stage (finding directions → checking
-  the reasoning → still running) instead of one frozen sentence.
+- The dock shows elapsed seconds and timer-based phase labels. These labels
+  were estimates, not backend progress; corrected under Unreleased above.
 - Predict responses report `timings` (moves / review / total) next to
   `latencyMs`, so a slow route can be diagnosed from real numbers.
 

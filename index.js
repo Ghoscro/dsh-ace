@@ -320,7 +320,8 @@ export function normalizeConfig(config = {}) {
       : 'low',
     expertSituationTimeoutMs: clampInt(source.expertSituationTimeoutMs, 5000, 30000, 12_000),
     // Latency budget: a card that arrives after the user has moved on is a miss.
-    // 25s generation + 12s review keeps the worst case under 40s, not 105s.
+    // Default model-stage budgets: 25s generation + optional 12s retry + 12s review.
+    // Evidence/history work is additional; these are not a total wall-clock SLA.
     expertMovesTimeoutMs: clampInt(source.expertMovesTimeoutMs, 8000, 90000, 25_000),
     expertReviewTimeoutMs: clampInt(source.expertReviewTimeoutMs, 5000, 30000, 12_000),
     // Ghost-text completion: one short call, low latency budget.
@@ -2214,9 +2215,9 @@ async function callExpertStage(ctx, route, prompt, config, timeoutMs, maxTokens,
 }
 
 /**
- * Run the expert pipeline: deterministic situation, one model call, host-side
- * selection of exactly one move. The caller falls back to fast prediction if
- * this throws.
+ * Run the expert pipeline: deterministic situation, generation (one retry),
+ * selection and reasoning review. Content failures return no expert card;
+ * review timeouts retain the candidate with an explicit warning.
  * @param {import('@deepseek-ai/cordis').Context} ctx - host context.
  * @param {ReturnType<typeof normalizeConfig>} config - plugin config.
  * @param {{ transcript: object[], cwd?: string, count: number, locale?: string }} input - request data.
@@ -2406,10 +2407,13 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   let movesMs = 0
   try {
     const moveStarted = Date.now()
-    result = await callExpertStage(
-      ctx, route, movesPrompt, stageConfig, config.expertMovesTimeoutMs, maxTokens, signal,
-    )
-    movesMs += Date.now() - moveStarted
+    try {
+      result = await callExpertStage(
+        ctx, route, movesPrompt, stageConfig, config.expertMovesTimeoutMs, maxTokens, signal,
+      )
+    } finally {
+      movesMs += Date.now() - moveStarted
+    }
     selection = parseExpertSelection(result.text, moveCount)
   } catch (error) {
     logPredictionEvent({
@@ -2420,10 +2424,13 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     if (signal.aborted) throw abortError(signal, 'expert stage aborted')
     const retryPrompt = buildSingleMovePrompt({ ...input, mode, level, evidence, situation, profile: readUserProfile(), rejects: rejectsBlock() })
     const retryStarted = Date.now()
-    result = await callExpertStage(
-      ctx, route, retryPrompt, stageConfig, Math.min(12_000, config.expertMovesTimeoutMs), 2400, signal,
-    )
-    movesMs += Date.now() - retryStarted
+    try {
+      result = await callExpertStage(
+        ctx, route, retryPrompt, stageConfig, Math.min(12_000, config.expertMovesTimeoutMs), 2400, signal,
+      )
+    } finally {
+      movesMs += Date.now() - retryStarted
+    }
     try {
       selection = parseExpertSelection(result.text, moveCount)
     } catch (retryError) {

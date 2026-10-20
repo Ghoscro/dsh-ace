@@ -27,6 +27,7 @@ const zh = {
   deep: '深度预测', deepTitle: '生成一条深度预测（约 15–30 秒，可取消）',
   deepLoading: '深度预测正在推演下一步…', autoExpert: '每轮自动生成深度预测建议',
   deepWaiting: '仍在处理，可取消', reviewPending: '校核超时：这张卡尚未完成推理校核，请自行判断后采用。',
+  showDetails: '显示详情', hideDetails: '收起详情',
   card: '深度预测', ace: '深度预测',
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
   salvaged: '模型没按结构化格式返回，已把原文放进卡片',
@@ -46,6 +47,7 @@ const en = {
   deep: 'ACE', deepTitle: 'Generate one ACE Move (about 15–30 seconds, cancelable)',
   deepLoading: 'ACE is reasoning about the next move…', autoExpert: 'Generate one ACE suggestion every turn',
   deepWaiting: 'Still processing, cancelable', reviewPending: 'Review timed out: this card has not completed reasoning review. Assess it before accepting.',
+  showDetails: 'Show details', hideDetails: 'Hide details',
   card: 'ACE Move', ace: 'ACE',
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
   salvaged: 'The model did not return structured JSON; its raw answer is in the card',
@@ -131,7 +133,7 @@ function readSettings() {
 
 function createStore() {
   let state = {
-    status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', salvaged: false, warning: '', startedAt: 0, durationMs: 0,
+    status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', salvaged: false, warning: '', startedAt: 0, durationMs: 0, detailsOpen: false,
     turnSeq: -1, triggeredTurnSeq: -1, accepted: null,
   }
   const listeners = new Set()
@@ -149,7 +151,7 @@ function createStore() {
 }
 
 const EMPTY_STATE = Object.freeze({
-  status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', salvaged: false, warning: '', startedAt: 0, durationMs: 0,
+  status: 'idle', candidates: [], error: '', model: '', mode: 'expert', style: '', salvaged: false, warning: '', startedAt: 0, durationMs: 0, detailsOpen: false,
   turnSeq: -1, triggeredTurnSeq: -1, accepted: null,
 })
 const EMPTY_STORE = { get: () => EMPTY_STATE, subscribe: () => () => {} }
@@ -500,7 +502,10 @@ function apply(ctx) {
     '.dcp-head{display:flex;align-items:center;gap:8px;min-height:26px;margin-bottom:4px}',
     '.dcp-title{font-size:var(--dsh-fs-x,12px);letter-spacing:.02em;opacity:.68;white-space:nowrap}',
     '.dcp-loading{font-size:var(--dsh-fs-meta,13px);opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-    '.dcp-stamp{margin-top:2px;text-align:right;font-size:var(--dsh-fs-x,12px);letter-spacing:.02em;opacity:.4;user-select:text;cursor:text}',
+    '.dcp-stamp{text-align:right;font-size:var(--dsh-fs-x,12px);letter-spacing:.02em;opacity:.4;user-select:text;cursor:text}',
+    '.dcp-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:3px}',
+    '.dcp-detail-toggle{border:0;background:transparent;color:inherit;font:inherit;font-size:var(--dsh-fs-x,12px);padding:0;cursor:pointer;opacity:.55;text-decoration:underline;text-underline-offset:2px}',
+    '.dcp-detail-toggle:hover,.dcp-detail-toggle:focus-visible{opacity:.95}',
     '.dcp-spacer{flex:1}',
     '.dcp-icon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;font-size:var(--dsh-fs-meta,13px);line-height:1;cursor:pointer;opacity:.65}',
     '.dcp-icon:hover,.dcp-icon:focus-visible{background:var(--dsw-specific-bubble,#ffffff12);opacity:1}',
@@ -1148,10 +1153,9 @@ function apply(ctx) {
       const outcome = field('outcome')
       // Four-beat cards replace why with a structured line, then add Z and W.
       const line = y || why
-      const meta = [
-        falsify ? `${t('falsify')}：${falsify}` : '',
-        risk ? `${t('risk')}：${risk}` : '',
-      ].filter(Boolean).join(' · ')
+      const more = state.detailsOpen === true
+      const falsifyLine = falsify ? `${t('falsify')}：${falsify}` : ''
+      const riskLine = risk ? `${t('risk')}：${risk}` : ''
       return React.createElement('button', {
         key: `candidate-${index}-${text.slice(0, 16)}`,
         type: 'button',
@@ -1170,25 +1174,28 @@ function apply(ctx) {
           React.createElement('span', { className: 'dcp-beat' }, t('goal')), goal) : null,
         outcome ? React.createElement('span', { className: 'dcp-plain' },
           React.createElement('span', { className: 'dcp-beat' }, t('outcome')), outcome) : null,
-        fact && factSource ? React.createElement('span', { className: 'dcp-fact' },
+        // Only the white lines stay: X, the three plain lines and W. Everything
+        // grey (Y, Z, the falsifier, evidence) is one click away.
+        more && fact && factSource ? React.createElement('span', { className: 'dcp-fact' },
           React.createElement('span', { className: 'dcp-beat' }, t('fact')), fact,
           React.createElement('span', { className: 'dcp-meta' }, t('factSource') + factSource),
           factQuote ? React.createElement('span', { className: 'dcp-meta' }, t('quote') + factQuote) : null) : null,
-        line ? React.createElement('span', { className: 'dcp-why' },
+        line && more ? React.createElement('span', { className: 'dcp-why' },
           React.createElement('span', { className: 'dcp-beat' }, t(hypothesis ? 'mechanism' : 'hypothesis')), line) : null,
-        hypothesis ? React.createElement('span', { className: 'dcp-hypothesis' },
+        more && hypothesis ? React.createElement('span', { className: 'dcp-hypothesis' },
           React.createElement('span', { className: 'dcp-beat' }, t('hypothesis')), hypothesis) : null,
-        alternative ? React.createElement('span', { className: 'dcp-alternative' }, t('alternative'), alternative) : null,
-        z ? React.createElement('span', { className: 'dcp-z' },
+        more && alternative ? React.createElement('span', { className: 'dcp-alternative' }, t('alternative'), alternative) : null,
+        z && more ? React.createElement('span', { className: 'dcp-z' },
           React.createElement('span', { className: 'dcp-beat' }, t(factQuote ? 'imagined' : 'beatZ')), z) : null,
-        relation ? React.createElement('span', { className: 'dcp-rel' },
+        more && relation ? React.createElement('span', { className: 'dcp-rel' },
           React.createElement('span', { className: 'dcp-beat' }, t('relation')), relation) : null,
-        verification ? React.createElement('span', { className: 'dcp-verification' },
+        more && verification ? React.createElement('span', { className: 'dcp-verification' },
           React.createElement('span', { className: 'dcp-beat' }, t('verification')), verification) : null,
-        supports ? React.createElement('span', { className: 'dcp-supports' }, t('supports'), supports) : null,
-        unresolved ? React.createElement('span', { className: 'dcp-unresolved' }, t('unresolved'), unresolved) : null,
+        more && supports ? React.createElement('span', { className: 'dcp-supports' }, t('supports'), supports) : null,
+        more && unresolved ? React.createElement('span', { className: 'dcp-unresolved' }, t('unresolved'), unresolved) : null,
         React.createElement('span', { className: 'dcp-text' }, text),
-        meta ? React.createElement('span', { className: 'dcp-meta' }, meta) : null))
+        more && falsifyLine ? React.createElement('span', { className: 'dcp-meta' }, falsifyLine) : null,
+        more && riskLine ? React.createElement('span', { className: 'dcp-meta' }, riskLine) : null))
     })
 
     const refresh = () => {
@@ -1276,10 +1283,17 @@ function apply(ctx) {
           : `${state.salvaged ? t('salvaged') : state.mode === 'fast-fallback' ? t('fallback') : t('error')}：${state.warning}`)
       : null,
     rows,
-    // Version + elapsed stay on the card, so a screenshot reports both.
+    // Footer: the reasoning detail is folded by default, version stays visible.
     state.status === 'ready' && state.durationMs > 0
-      ? React.createElement('div', { className: 'dcp-stamp' },
-        `ACE ${ACE_VERSION} · ${(state.durationMs / 1000).toFixed(1)}s`)
+      ? React.createElement('div', { className: 'dcp-foot' },
+        React.createElement('button', {
+          type: 'button',
+          className: 'dcp-detail-toggle',
+          'aria-expanded': state.detailsOpen === true,
+          onClick: () => store.set({ detailsOpen: state.detailsOpen !== true }),
+        }, state.detailsOpen === true ? t('hideDetails') : t('showDetails')),
+        React.createElement('span', { className: 'dcp-stamp' },
+          `ACE ${ACE_VERSION} · ${(state.durationMs / 1000).toFixed(1)}s`))
       : null,
     state.accepted !== null
       ? React.createElement('div', { className: 'dcp-undo' },

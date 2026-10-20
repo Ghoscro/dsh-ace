@@ -25,6 +25,7 @@
     "docs/cases.md",
     "docs/demo.svg",
     "docs/product-plan.md",
+    "docs/trial-feedback.md",
     "scripts/threshold-sweep.mjs"
   ],
   "keywords": [

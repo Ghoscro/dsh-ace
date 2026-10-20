@@ -16,7 +16,8 @@ same acceptance question:
 - Z (where else it shows up): upload retries and CI flaky reruns are the same
   mechanism — a hidden retry turning a real failure into a probability.
 - W (try this): "remove the retry and run this test once".
-- Wrong if: one clean run means the retry was not masking anything.
+- Weakening observation: repeated comparable runs without retries show no higher
+  failure rate. One clean run alone cannot rule out intermittent masking.
 - Risk: it may fail for an unrelated reason; keep the log.
 
 ## 2. Use the tool already on the machine
@@ -38,6 +39,9 @@ same acceptance question:
 - Risk: the install failure may be environment-specific.
 
 ## Acceptance used before a public release
+
+This is an acceptance protocol, not a claim that these checks have been
+completed. See [trial feedback](trial-feedback.md) for current evidence and gaps.
 
 1. Ten real tasks are recorded with the obvious line and the ACE Move.
 2. A blind reviewer answers: “Did this make you think of something you had not?”
