@@ -1,0 +1,43 @@
+name: release-notes
+
+# Editing a published release needs the workflow token; this keeps the recovery
+# note on the release people actually open from a chat group.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/release-notes.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  recovery-note:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v0.5.23
+      MARKER: If a release breaks the composer
+    steps:
+      - name: Append the recovery note when it is missing
+        run: |
+          gh release view "$TAG" --json body -q .body > /tmp/notes.md
+          if grep -q "$MARKER" /tmp/notes.md; then
+            echo "recovery note already present"
+            exit 0
+          fi
+          cat >> /tmp/notes.md <<'EOF'
+
+          **If a release breaks the composer:** a broken plugin does not stop DSH from
+          booting; the entry fails to activate and the rest of the harness starts. Remove
+          `"@ghoscro/dsh-ace"` from `dsh.profile.bundles` in the profile `package.json`
+          (leave the dependency in place) and restart DSH. Then install a known-good
+          tarball, or remove the dependency entirely. When reporting, include the build
+          id from `<html data-ace-version>` and the tail of
+          `<DSH_HOME>/diagnostics/dsh-ace-errors.jsonl` — both are written without
+          transcript content.
+          EOF
+          gh release edit "$TAG" --notes-file /tmp/notes.md
+          echo "recovery note added to $TAG"
+      - name: Show the result
+        run: gh release view "$TAG" --json body -q .body | tail -n 12
