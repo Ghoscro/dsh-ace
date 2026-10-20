@@ -172,7 +172,7 @@ node scripts/token-tiers.mjs
 
 ## 作者
 
-**米哈游关卡灯光艺术家 Micker Wenyu.Yang的DSH插件作品。**
+**micker 的 DSH 插件作品。**
 
 ## 许可证
 

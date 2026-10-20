@@ -171,7 +171,7 @@ Remove the bundle and dependency from the profile, restart DSH, and delete the p
 
 ## Author
 
-**米哈游关卡灯光艺术家 Micker Wenyu.Yang的DSH插件作品。**
+**A DSH plugin by micker.**
 
 ## License
 
