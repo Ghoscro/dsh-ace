@@ -58,6 +58,15 @@ One missing line and the card is not shown. Wild mode is included: the line `Tab
 - If nothing beats the obvious “continue”, it shows **nothing**. A quiet card is a feature.
 - `Tab` inserts only W. You can edit it. ACE never sends for you.
 
+## Composer
+
+ACE also works inside the input box:
+
+- While you type, a **ghost completion** appears at the caret; `Tab` accepts it.
+- `` ` `` (backquote) or `F1` toggles the ghost. `F1` also prints one diagnostic line per press, newest at the bottom.
+- `Alt+1` … `Alt+4` picks one of the alternative card rows; `Escape` dismisses the card or the settings panel.
+- The loaded build is exposed as `<html data-ace-version>`; quote it in a bug report.
+
 ## Demo
 
 The card above is the intended loop:
@@ -106,10 +115,10 @@ These are examples, not a controlled benchmark. They show the kind of added valu
 ## How it works
 
 1. The browser sends the recent transcript and the session `cwd` to the host route.
-2. The host builds a bounded, read-only evidence pack from `git` (status, diff stat, last commit, a bounded diff).
+2. The host builds a bounded, read-only evidence pack: `git` status, diff stat, last commit and a bounded diff, plus the project's top-level tree and its dependency/script names, so a structural claim can land on a real module.
 3. A deterministic situation block is built from the last user goal, the assistant’s last offer, and explicit constraints. There is no separate situation-model call.
-4. **One** model call returns 3–5 line-delimited JSON candidates plus a selection line.
-5. The host scores and selects exactly one move. Fixed slot order is gone; `verify`/`constrain` candidates are penalized so “check again” cannot win by default.
+4. **One generation call** returns 3–5 line-delimited JSON candidates plus a selection line.
+5. The host scores and selects exactly one move. Fixed slot order is gone; `verify`/`constrain` candidates are penalized so “check again” cannot win by default. The winner then goes through **one bounded review call**: X/Y/Z, the relation, the analogue and the falsifier are checked against the evidence, and a card that cannot support them is rejected rather than silently downgraded.
 6. If the best score is below the threshold, the plugin returns no card.
 7. `Tab` fills the draft. The card’s `why`/`evidence`/`risk` are not sent with the message.
 
@@ -119,7 +128,6 @@ The parser scans balanced JSON objects and skips a truncated or malformed line w
 
 - **Modes:** `safe`, `standard`, `brainstorm`, `wild` (labelled **ACE**) are equal-status modes, not a volume dial. Each changes the prompt policy and the output budget, the card shows which mode produced it, and the settings panel switches it. No mode collapses into `safe`.
 - **Cache:** the rules and the voice samples form a byte-identical head, the conversation is appended instead of re-windowed every turn, and only the volatile tail (mode, situation, evidence) changes, so the provider's automatic prefix cache can hit on most of the prompt.
-- **Automatic ACE:** one ACE suggestion after each completed turn. You can turn it off in the ACE settings.
 - **Pause:** stops automatic suggestions; `✦ ACE` still works on demand.
 - **Text size:** one slider in the settings panel drives `--dsh-fs-w` / `--dsh-fs-meta` / `--dsh-fs-x`. The value is stored in `chrome.storage.local` when the container exposes the extension API (`localStorage` otherwise) and set on `document.documentElement.style`, so changing the size never needs a rebuild.
 - **Model:** uses the active DSH agent default, or the plugin’s configured route.
