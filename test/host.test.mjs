@@ -457,7 +457,7 @@ test('each mode caps the expert call at its own budget without raising the user 
     { role: 'user', text: '把我这个想法写成能开工的任务' },
     { role: 'assistant', text: '想先从哪个方向展开？' },
   ]
-  for (const [mode, expected] of [['safe', 2200], ['standard', 4000], ['brainstorm', 5600], ['wild', 6000]]) {
+  for (const [mode, expected] of [['safe', 1600], ['standard', 2600], ['brainstorm', 3200], ['wild', 3600]]) {
     const seen = []
     const ctx = { get: () => undefined, llm: llmCapturing(EXPERT_JSONL, seen) }
     await generateExpertPrediction(ctx, normalizeConfig(), {
@@ -708,8 +708,8 @@ test('the banned-word rewrite gets the full output budget instead of a tight 900
     transcript: [{ role: 'user', text: '帮我修测试' }, { role: 'assistant', text: '要跑全量吗？' }],
     count: 4, cwd: '', locale: 'zh-CN', style: 'standard',
   }, new AbortController().signal)
-  assert.equal(seen[0].maxTokens, 4000)
-  assert.equal(seen[1].maxTokens, 6000)
+  assert.equal(seen[0].maxTokens, 2600)
+  assert.equal(seen[1].maxTokens, 4000)
 })
 
 test('consecutive turns share a byte-identical prefix so the provider cache can hit', () => {

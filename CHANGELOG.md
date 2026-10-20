@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.24 — 2026-10-20
+
+- Latency: three candidates instead of five, a smaller output schema (no
+  `evidence`, `risk`, `insight` or `over_obvious`), lower per-mode token caps,
+  and a reasoning-off generation stage when the model advertises an off effort.
+  On the same route this took a card from ~24s to ~15-18s.
+- Budgets: generation 45s → 25s, review 30s → 12s, retry 30s → 12s, review
+  output 6000 → 2400 tokens. The worst case no longer runs for minutes.
+- A review timeout now shows the card with a visible warning instead of dropping
+  it after the wait. Content rejections still drop the card.
+- The dock shows elapsed seconds and the stage (finding directions → checking
+  the reasoning → still running) instead of one frozen sentence.
+- Predict responses report `timings` (moves / review / total) next to
+  `latencyMs`, so a slow route can be diagnosed from real numbers.
+
 ## 0.5.23 — 2026-10-20
 
 - The claim review no longer rejects a sound card over formatting: an oversized

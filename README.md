@@ -50,7 +50,7 @@ Most next-message tools optimize for **what you would probably type**. ACE optim
 
 One missing line and the card is not shown. Wild mode is included: the line `Tab` inserts must be readable at the current level, not a stack of unexplained terms.
 
-- It generates 3–5 directions internally: advance, use an existing tool, reframe, verify, clarify, constrain, close.
+- It generates 3 directions internally: advance, use an existing tool, reframe, verify, clarify, constrain, close.
 - It scores them for `value`, `novelty`, `worth_extra_step`, and action type. The relation beat is judged by the host, not scored by the model: a surface-alike example needs no mapping line, and a surface-unlike example with no written mapping is not shown at all.
 - **Level:** the card reads the user's own messages and adapts — everyday language and one action at a time for non-engineers, shorthand and judgement for engineers. Override it with `level` in the plugin config.
 - The default mode answers a specific line of the assistant's last message (`reply_to`, quoted verbatim), but picks the answer worth sending, not the smoothest one.
@@ -117,7 +117,7 @@ These are examples, not a controlled benchmark. They show the kind of added valu
 1. The browser sends the recent transcript and the session `cwd` to the host route.
 2. The host builds a bounded, read-only evidence pack: `git` status, diff stat, last commit and a bounded diff, plus the project's top-level tree and its dependency/script names, so a structural claim can land on a real module.
 3. A deterministic situation block is built from the last user goal, the assistant’s last offer, and explicit constraints. There is no separate situation-model call.
-4. **One generation call** returns 3–5 line-delimited JSON candidates plus a selection line.
+4. **One generation call** returns 3 line-delimited JSON candidates plus a selection line.
 5. The host scores and selects exactly one move. Fixed slot order is gone; `verify`/`constrain` candidates are penalized so “check again” cannot win by default. The winner then goes through **one bounded review call**: X/Y/Z, the relation, the analogue and the falsifier are checked against the evidence, and a card that cannot support them is rejected rather than silently downgraded.
 6. If the best score is below the threshold, the plugin returns no card.
 7. `Tab` fills the draft. The card’s `why`/`evidence`/`risk` are not sent with the message.

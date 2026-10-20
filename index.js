@@ -215,36 +215,34 @@ const ZH_EXPERT = `你是用户的专家级 next-move 顾问。不要猜最可�
 候选方向可以包括：推进下一步、用现成工具或更省事的路径、换切入点/重新框定问题、验证关键假设、澄清缺失输入、收范围/收尾。不要默认找风险。
 
 输出格式：每行一个 JSON 对象，不要数组、不要逗号分隔、不要 markdown、不要代码围栏。
-前 3-5 行是候选，每行：
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","fact":"...","fact_source":"...","hypothesis":"...","verification":"...","now":"...","goal":"...","outcome":"..."}
+每行一条候选：
+{"text":"...","why":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"reply_to":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","fact":"...","fact_source":"...","hypothesis":"...","verification":"...","now":"...","goal":"...","outcome":"..."}
 最后一行是选择：
 {"best_index":0,"comparison":"为什么选它，其他方向差在哪"}
 
 规则：
-- text 是用户口吻、可直接发送；why 不发送。
-- 3-5 条，方向明显不同；至少 1 条是 advance/tool/reframe，全部落在 verify/constrain 视为不合格。
+- text 是用户口吻、可直接发送；why 不发送，但要说清这条相比顺手“继续”多得到什么。
+- 数量见 [OUT] 的 N（通常 3 条），方向明显不同；至少 1 条是 advance/tool/reframe，全部落在 verify/constrain 视为不合格。
 - value = 对目标的推进；novelty = 用户可能没想到；worth_extra_step = 值不值得多这一步。三项 0-10，诚实打分，不要每条都 8 分以上。
-- over_obvious 必须回答：相比顺手说“继续/好”，它多得到什么；why 说明这条为什么值得现在发。
 - 若所有候选都不比顺手继续更好，只输出一行：{"best_index":null,"comparison":"没有更好的下一步"}。
 - 不要编造文件名、数字或结论；不要用“你可以/建议/不妨”这类助手口吻。
 - x / y / z / relation / surface_like / falsify 是四拍卡片的字段，规则见 [INSIGHT]；now / goal / outcome 是人话三行，规则见 [PLAIN]；text 就是第四拍的 W，必须能直接发送。
 - 只输出这些 JSON 行，不要解释。`
 
-const EN_EXPERT = `You are the user's expert next-move advisor. Do not predict the most likely next line; generate 3-5 genuinely different candidate moves, compare them, and keep only the one most worth sending.
+const EN_EXPERT = `You are the user's expert next-move advisor. Do not predict the most likely next line; generate a few genuinely different candidate moves, compare them, and keep only the one most worth sending.
 
 Directions include: advance the next step, use an existing tool or a cheaper path, reframe the problem, verify a key assumption, clarify missing input, constrain scope, or close. Do not default to risk-finding.
 
 Output format: one JSON object per line. No array, no comma-separated list, no markdown, no code fences.
-The first 3-5 lines are candidates:
-{"text":"...","why":"...","evidence":"...","risk":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"insight":0,"reply_to":"...","over_obvious":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","fact":"...","fact_source":"...","hypothesis":"...","verification":"...","now":"...","goal":"...","outcome":"..."}
+Each line is one candidate:
+{"text":"...","why":"...","action":"advance|tool|reframe|verify|clarify|constrain|close","value":0,"novelty":0,"worth_extra_step":0,"reply_to":"...","x":"...","y":"...","z":"...","relation":"...","surface_like":true,"falsify":"...","fact":"...","fact_source":"...","hypothesis":"...","verification":"...","now":"...","goal":"...","outcome":"..."}
 The final line is the selection:
 {"best_index":0,"comparison":"why this one, and why the others are weaker"}
 
 Rules:
-- text is the user's sendable voice; why is shown, not sent.
-- 3-5 moves with clearly different directions; at least one advance/tool/reframe; all verify/constrain is invalid.
+- text is the user's sendable voice; why is shown, not sent, and must say what this gains over the obvious "continue".
+- The count is the N in [OUT] (usually 3), with clearly different directions; at least one advance/tool/reframe; all verify/constrain is invalid.
 - value = progress toward the goal; novelty = what the user likely missed; worth_extra_step = whether it deserves an extra step. Score 0-10 honestly; do not give everything 8+.
-- over_obvious must answer: what does it gain over the obvious "continue/ok"? why explains why it is worth sending now.
 - If no move beats the obvious next line, output one line: {"best_index":null,"comparison":"no better next move"}.
 - Never invent file names, numbers, or conclusions; no assistant voice ("you could", "I suggest").
 - x / y / z / relation / surface_like / falsify are the four-beat card fields; the rules are in [INSIGHT]. now / goal / outcome are the plain-language lines; the rules are in [PLAIN]. text is the fourth beat (W) and must be sendable as-is.
@@ -294,7 +292,7 @@ export function normalizeConfig(config = {}) {
     model: typeof source.model === 'string' ? source.model.trim() : '',
     count: clampInt(source.count, 1, 4, 4),
     maxTokens: clampInt(source.maxTokens, 80, 2000, 1200),
-    expertMaxTokens: clampInt(source.expertMaxTokens, 1000, 8000, 6000),
+    expertMaxTokens: clampInt(source.expertMaxTokens, 1000, 8000, 4000),
     expertSituationMaxTokens: clampInt(source.expertSituationMaxTokens, 300, 1600, 800),
     expertMinScore: clampNumber(source.expertMinScore, 0, 12, 5),
     captureSamples: source.captureSamples !== false,
@@ -321,7 +319,10 @@ export function normalizeConfig(config = {}) {
       ? source.expertReasoningEffort
       : 'low',
     expertSituationTimeoutMs: clampInt(source.expertSituationTimeoutMs, 5000, 30000, 12_000),
-    expertMovesTimeoutMs: clampInt(source.expertMovesTimeoutMs, 8000, 90000, 45_000),
+    // Latency budget: a card that arrives after the user has moved on is a miss.
+    // 25s generation + 12s review keeps the worst case under 40s, not 105s.
+    expertMovesTimeoutMs: clampInt(source.expertMovesTimeoutMs, 8000, 90000, 25_000),
+    expertReviewTimeoutMs: clampInt(source.expertReviewTimeoutMs, 5000, 30000, 12_000),
     // Ghost-text completion: one short call, low latency budget.
     inlineMaxTokens: clampInt(source.inlineMaxTokens, 24, 400, 120),
     inlineReasoningEffort: typeof source.inlineReasoningEffort === 'string' && source.inlineReasoningEffort.trim()
@@ -639,7 +640,7 @@ export function buildDeterministicSituation(transcript) {
 export const ACE_MODES = ['safe', 'standard', 'brainstorm', 'wild']
 
 /** Output budget per mode, still capped by the user's `expertMaxTokens`. */
-export const MODE_MAX_TOKENS = { safe: 2200, standard: 4000, brainstorm: 5600, wild: 6000 }
+export const MODE_MAX_TOKENS = { safe: 1600, standard: 2600, brainstorm: 3200, wild: 3600 }
 
 const MODE_POLICY = {
   safe: 'MODE safe: reversible, small, cheap-to-undo steps. Say how each move rolls back. Prefer the smallest step that still tests the real question; do not demand a rewrite or a new dependency when a reversible step exists.',
@@ -841,7 +842,6 @@ const INSIGHT_ZH = `[INSIGHT - 用户自己想不到的那一层]
 - surface_like：z 和 x 表面上是否也像（就在用户眼皮底下）。true 或 false。
 - relation：surface_like 为 false 时必填，一句话写清"这跟那个是怎么对上的"——哪一步是同一个机制。句子里要真的点到 X 和 Z 两边，不能把 x 或 z 换个说法再抄一遍。为 true 时可留空。
 - 没有 relation、或 relation 只是把 x/z 重写一遍，宿主会直接丢掉这张卡，不给你补写的机会。写不出来就换一个例子，不要硬凑。
-- insight（0-10）：Y 那一拍本身的新意。只是"跑个测试、加个日志、改个名字"不超过 3，除非它顺带揭示了一个结构性结论。
 - 不按"跳了几层"扣分：远类比往往最值钱（把将军攻城的关系拿去解肿瘤放疗），只要 relation 把关系写清楚。
 - y 必须落在真实存在的对象上：模块、文件、依赖、接口、数据形状、失败路径；引用 package.json 里的依赖、目录结构或 diff 里的符号，不要泛泛谈"可维护性"。`
 
@@ -857,7 +857,6 @@ Field rules:
 - surface_like: whether z also resembles x on the surface (right under the user's nose). true or false.
 - relation: required when surface_like is false; one sentence on how it maps - which step is the same mechanism. It must actually name both sides, not restate x or z in other words. Optional when true.
 - With no relation, or a relation that only rewrites x/z, the host drops the card; there is no second try. Pick another example instead of forcing one.
-- insight (0-10): the novelty of the Y beat alone. "Run a test, add a log, rename a thing" is at most 3 unless it also exposes a structural conclusion.
 - Do not penalize distance: far analogies are often the most valuable (a besieging army's relation used for tumor radiotherapy) as long as relation maps it.
 - y must land on real objects: modules, files, dependencies, interfaces, data shapes, failure paths. Cite a dependency in package.json, a directory in the tree, or a symbol in the diff; do not wave at "maintainability".`
 
@@ -902,7 +901,8 @@ const techBlock = locale => (locale.startsWith('zh') ? TECH_ZH : TECH_EN)
 /** The output contract is restated last so a long mode prompt cannot bury it. */
 const FORMAT_BLOCK = `[FORMAT - binding]
 - Output one JSON object per line, each one complete and closed on the same line. No prose, markdown, headings or code fences outside the objects.
-- Keep text under 600 characters, x under 60, y and z under 140, relation under 120, falsify under 90, why under 160, risk under 160. If room runs short, shorten text first; never drop a closing brace to fit more detail.
+- Keep text under 600 characters, x under 60, y and z under 140, relation under 120, falsify under 90, why under 160. If room runs short, shorten text first; never drop a closing brace to fit more detail.
+- Do not add fields that are not in the schema. Shorter output wins: every extra field costs the user waiting time.
 - If you cannot produce a schema-valid object, output a single line of plain text with your best next move instead of inventing fields; the host will salvage it.`
 
 /** Long-lived user profile, written by tools/user-profile.ts. */
@@ -2368,9 +2368,19 @@ export async function generateInlineCompletion(ctx, config, input, signal) {
 }
 
 export async function generateExpertPrediction(ctx, config, input, signal) {
+  const startedAt = Date.now()
   const route = resolveModel(ctx, config)
   const mode = resolveMode(input.style ?? input.mode)
   const maxTokens = Math.min(config.expertMaxTokens, MODE_MAX_TOKENS[mode])
+  // Three directions is enough to compare, and it is roughly 40% less output
+  // than five. The gate still drops every card that scores below the floor.
+  const moveCount = clampInt(input.count, 1, 3, 3)
+  // Reasoning tokens are the largest latency cost on thinking routes. When the
+  // model advertises an "off" effort, generation uses it; otherwise the
+  // configured effort stays untouched (DSH rejects unlisted effort ids).
+  const noThinking = await raceAbort(inlineEffort(ctx, config, route), signal, 'expert aborted')
+    .catch(() => undefined)
+  const stageConfig = noThinking ? { ...config, expertReasoningEffort: noThinking } : config
   const evidence = await collectEvidence(input.cwd ?? '')
   const home = (process.env.DSH_HOME || join(homedir(), '.dsh'))
   const ingested = config.ledger && home
@@ -2389,15 +2399,18 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   }
   const level = estimateLevel(sourceTranscript, config.level)
   const situation = buildDeterministicSituation(sourceTranscript)
-  const movesPrompt = buildExpertPrompt({ ...input, transcript: sourceTranscript, mode, level, evidence, situation, profile: readUserProfile(), rejects: rejectsBlock() })
+  const movesPrompt = buildExpertPrompt({ ...input, count: moveCount, transcript: sourceTranscript, mode, level, evidence, situation, profile: readUserProfile(), rejects: rejectsBlock() })
   let result
   let selection
   let salvageDraft = null
+  let movesMs = 0
   try {
+    const moveStarted = Date.now()
     result = await callExpertStage(
-      ctx, route, movesPrompt, config, config.expertMovesTimeoutMs, maxTokens, signal,
+      ctx, route, movesPrompt, stageConfig, config.expertMovesTimeoutMs, maxTokens, signal,
     )
-    selection = parseExpertSelection(result.text, 5)
+    movesMs += Date.now() - moveStarted
+    selection = parseExpertSelection(result.text, moveCount)
   } catch (error) {
     logPredictionEvent({
       status: 'expert-retry',
@@ -2406,11 +2419,13 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     })
     if (signal.aborted) throw abortError(signal, 'expert stage aborted')
     const retryPrompt = buildSingleMovePrompt({ ...input, mode, level, evidence, situation, profile: readUserProfile(), rejects: rejectsBlock() })
+    const retryStarted = Date.now()
     result = await callExpertStage(
-      ctx, route, retryPrompt, config, Math.min(30_000, config.expertMovesTimeoutMs), 3000, signal,
+      ctx, route, retryPrompt, stageConfig, Math.min(12_000, config.expertMovesTimeoutMs), 2400, signal,
     )
+    movesMs += Date.now() - retryStarted
     try {
-      selection = parseExpertSelection(result.text, 5)
+      selection = parseExpertSelection(result.text, moveCount)
     } catch (retryError) {
       // Recover its idea, but never bypass the same reasoning check as JSON cards.
       const salvaged = salvageExpertText(result.text)
@@ -2444,29 +2459,45 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
   // Review the selected idea rather than re-ranking for safety or convenience.
   // Every shown expert card, including recovered prose, passes this seam.
   let reviewPromptChars = 0
+  let reviewMs = 0
+  let warning = ''
   if (best) {
+    const reviewStarted = Date.now()
     const reviewContext = { transcript: sourceTranscript, evidence, locale: input.locale ?? 'zh-CN' }
     const reviewPrompt = buildClaimReviewPrompt(best, reviewContext)
     reviewPromptChars = reviewPrompt.system.length + reviewPrompt.user.length
-    const effort = await raceAbort(inlineEffort(ctx, config, route), signal, 'claim review aborted')
-    const reviewed = await callExpertStage(ctx, route, reviewPrompt,
-      { ...config, expertTemperature: 0.3, expertReasoningEffort: effort },
-      Math.min(30_000, config.expertMovesTimeoutMs), Math.min(6000, config.expertMaxTokens), signal)
-    // A successful model call is not a successful review: validate the quote,
-    // explicit hypothetical analogy and known unsupported exclusion patterns.
-    const repaired = parseClaimReview(reviewed.text, reviewContext)
-    if (!judgeRelation({ x: repaired.x, z: repaired.z, relation: repaired.relation, surfaceLike: false })) {
-      throw new Error('claim review lost the cross-domain mechanism mapping')
-    }
-    // Carry only reviewed prose and non-prose selection metadata. In particular,
-    // never leak the original unreviewed comparison/evidence through the API.
-    best = { ...repaired, intent: best.intent, score: best.score, relation_ok: true, claimReviewed: true }
-    if (reviewed.usage) {
-      const usage = { ...(result.usage ?? {}) }
-      for (const [key, value] of Object.entries(reviewed.usage)) {
-        if (typeof value === 'number') usage[key] = (typeof usage[key] === 'number' ? usage[key] : 0) + value
+    try {
+      const reviewed = await callExpertStage(ctx, route, reviewPrompt,
+        { ...config, expertTemperature: 0.3, expertReasoningEffort: noThinking ?? config.expertReasoningEffort },
+        config.expertReviewTimeoutMs, Math.min(2400, config.expertMaxTokens), signal)
+      // A successful model call is not a successful review: validate the quote,
+      // explicit hypothetical analogy and known unsupported exclusion patterns.
+      const repaired = parseClaimReview(reviewed.text, reviewContext)
+      if (!judgeRelation({ x: repaired.x, z: repaired.z, relation: repaired.relation, surfaceLike: false })) {
+        throw new Error('claim review lost the cross-domain mechanism mapping')
       }
-      result.usage = usage
+      // Carry only reviewed prose and non-prose selection metadata. In particular,
+      // never leak the original unreviewed comparison/evidence through the API.
+      best = { ...repaired, intent: best.intent, score: best.score, relation_ok: true, claimReviewed: true }
+      if (reviewed.usage) {
+        const usage = { ...(result.usage ?? {}) }
+        for (const [key, value] of Object.entries(reviewed.usage)) {
+          if (typeof value === 'number') usage[key] = (typeof usage[key] === 'number' ? usage[key] : 0) + value
+        }
+        result.usage = usage
+      }
+    } catch (error) {
+      if (signal.aborted) throw abortError(signal, 'claim review aborted')
+      const message = String(error?.message ?? error)
+      // A slow provider is not a false claim. Content rejections still drop the
+      // card; a timeout shows the unreviewed card with a visible warning, so a
+      // 12s stall never costs the user the whole wait.
+      if (!/timed out|timeout/i.test(message)) throw error
+      logPredictionEvent({ status: 'review-timeout', sessionId: input.sessionId, message: message.slice(0, 200) })
+      best = { ...best, claimReviewed: false }
+      warning = 'ACE review timed out; this card is shown without the reasoning review.'
+    } finally {
+      reviewMs = Date.now() - reviewStarted
     }
   }
   const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
@@ -2499,6 +2530,8 @@ export async function generateExpertPrediction(ctx, config, input, signal) {
     evidenceUsed: evidence !== '(none)' && evidence !== '(not a git repository or no changes)',
     usage: result.usage,
     promptChars: (movesPrompt.system ?? '').length + (movesPrompt.user ?? '').length + reviewPromptChars,
+    warning: warning || undefined,
+    timings: { movesMs, reviewMs, totalMs: Date.now() - startedAt },
   }
 }
 
@@ -2592,6 +2625,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
         count: config.count,
         timeoutMs: config.timeoutMs,
         expertTimeoutMs: config.expertMovesTimeoutMs,
+        reviewTimeoutMs: config.expertReviewTimeoutMs,
         modes: ['fast', 'expert'],
         styles: ACE_MODES,
       },
@@ -2811,6 +2845,7 @@ export async function handleRequest(ctx, config, inflight, req, res) {
           evidenceUsed: result.evidenceUsed,
           usage: result.usage,
           latencyMs: Date.now() - started,
+          timings: result.timings,
         },
       })
     }

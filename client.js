@@ -11,7 +11,7 @@ const STREAM_ROUTE = '/composer-predict/stream'
 const LOCAL_ROUTE = '/composer-predict/local'
 /* Build-time version literal. install-version.test.ts fails the suite when this
    drifts from package.json or from what the desktop profile actually installed. */
-const ACE_VERSION = '0.5.23'
+const ACE_VERSION = '0.5.24'
 /** Four equal-status advisory modes; the host owns the prompt policy. */
 const MODES = ['safe', 'standard', 'brainstorm', 'wild']
 const clampMode = value => (MODES.includes(value) ? value : 'standard')
@@ -24,8 +24,9 @@ const zh = {
   undo: '撤销', settings: '深度预测设置', auto: '自动生成深度预测', pause: '暂停深度预测',
   count: '候选数量', fontSize: '字号', privacy: '深度预测会把最近几轮对话发给当前模型；不写入会话记录，不跨会话学习。',
   button: '深度预测', buttonTitle: '生成一条深度预测（Tab 采用）',
-  deep: '深度预测', deepTitle: '生成一条深度预测（约 10–50 秒，可取消）',
+  deep: '深度预测', deepTitle: '生成一条深度预测（约 15–30 秒，可取消）',
   deepLoading: '深度预测正在推演下一步…', autoExpert: '每轮自动生成深度预测建议',
+  deepStage1: '正在找方向', deepStage2: '正在校核因果', deepStage3: '还在跑，可取消',
   card: '深度预测', ace: '深度预测',
   recommended: '推荐', evidence: '依据', risk: '风险', fallback: '深度预测推演失败，已回退一条快速建议',
   salvaged: '模型没按结构化格式返回，已把原文放进卡片',
@@ -42,8 +43,9 @@ const en = {
   auto: 'Generate ACE automatically', pause: 'Pause ACE', count: 'Candidates', fontSize: 'Text size',
   privacy: 'ACE sends the recent turns to the current model. Nothing is written to the session and nothing is learned across sessions.',
   button: '✦ ACE', buttonTitle: 'Generate one ACE Move (Tab accepts it)',
-  deep: 'ACE', deepTitle: 'Generate one ACE Move (about 10–50 seconds, cancelable)',
+  deep: 'ACE', deepTitle: 'Generate one ACE Move (about 15–30 seconds, cancelable)',
   deepLoading: 'ACE is reasoning about the next move…', autoExpert: 'Generate one ACE suggestion every turn',
+  deepStage1: 'Finding directions', deepStage2: 'Checking the reasoning', deepStage3: 'Still running, cancelable',
   card: 'ACE Move', ace: 'ACE',
   recommended: 'Recommended', evidence: 'Evidence', risk: 'Risk', fallback: 'ACE failed; showed one fast suggestion',
   salvaged: 'The model did not return structured JSON; its raw answer is in the card',
@@ -557,6 +559,16 @@ function apply(ctx) {
     const input = useInput(snapshot => snapshot)
     const session = useSession(snapshot => snapshot)
     const [settingsOpen, setSettingsOpen] = useState(false)
+    // A card takes 15-25s. A frozen sentence reads as a hang; the seconds and
+    // the stage tell the user it is still working and that closing is safe.
+    const [, tick] = useState(0)
+    useEffect(() => {
+      if (state.status !== 'loading') return undefined
+      const timer = setInterval(() => tick(count => count + 1), 1000)
+      return () => clearInterval(timer)
+    }, [state.status])
+    const elapsed = state.startedAt ? Math.max(0, Math.round((Date.now() - state.startedAt) / 1000)) : 0
+    const stage = elapsed < 6 ? t('deepStage1') : elapsed < 16 ? t('deepStage2') : t('deepStage3')
 
     // Keep --dsh-ace-inset-left/right equal to the live composer card edges.
     // This dock is not the Todo/Goal slot, so no CSS math is assumed: measure, then set.
@@ -1219,7 +1231,7 @@ function apply(ctx) {
       React.createElement('span', { className: 'dcp-title' }, state.mode === 'expert' ? t('card') : t('title')),
       React.createElement('span', { className: 'dcp-mode-chip' }, t(`mode_${state.style || settings.mode}`)),
       state.status === 'loading'
-        ? React.createElement('span', { className: 'dcp-loading' }, state.mode === 'expert' ? t('deepLoading') : t('loading'))
+        ? React.createElement('span', { className: 'dcp-loading' }, state.mode === 'expert' ? `${stage} ${elapsed}s` : t('loading'))
         : state.status === 'ready'
           ? React.createElement('span', { className: 'dcp-loading' }, `${state.candidates.length}`)
           : null,
